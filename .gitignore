@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.venv/
+env/
+venv/
+
+# Logs
+*.log
+*.out
+*.err
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+
+# Docker
+*.pid
+*.seed
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
