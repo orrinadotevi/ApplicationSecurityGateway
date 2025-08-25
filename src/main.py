@@ -18,7 +18,7 @@ def load_policy(path: str) -> Policy:
         print(f"[policy] Warning: {e}")
         return Policy()
 
-POLICY_PATH = os.getenv("POLICY_PATH", "/app/configs/policy.yaml")
+POLICY_PATH = os.getenv("POLICY_PATH", "configs/policy.yaml")
 policy = load_policy(POLICY_PATH)
 
 LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "http://mock-llm:8001/echo")
