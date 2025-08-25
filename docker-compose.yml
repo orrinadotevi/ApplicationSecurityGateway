@@ -1,0 +1,19 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mock-llm
+    environment:
+      - POLICY_PATH=/app/configs/policy.yaml
+      - LLM_ENDPOINT=http://mock-llm:8001/echo
+
+  mock-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile.mockllm
+    ports:
+      - "8001:8001"
