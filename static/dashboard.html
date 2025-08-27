@@ -1,0 +1,151 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>LLM-ASG Dashboard</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 0; }
+    .subtitle { color: #666; margin-top: 4px; }
+    .row { display: flex; gap: 24px; align-items: center; margin-top: 16px; flex-wrap: wrap;}
+    .cards { display: flex; gap: 16px; margin: 16px 0; flex-wrap: wrap; }
+    .card { border: 1px solid #e3e3e3; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); min-width: 160px; }
+    .label { font-size: 12px; color: #666; }
+    .value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border: 1px solid #e3e3e3; padding: 8px 10px; text-align: left; }
+    th { background: #fafafa; }
+    .muted { color: #888; font-size: 12px; }
+    .footer { margin-top: 24px; color: #777; font-size: 12px; }
+    .btn { padding:8px 12px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer; }
+    code { background:#f5f5f5; padding:2px 4px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h1>LLM-ASG Dashboard</h1>
+  <div class="subtitle">Real-time allow/block/monitor counts, rule hits, and policy controls.</div>
+
+  <div class="row">
+    <button id="reloadBtn" class="btn">Force Policy Reload</button>
+    <button id="downloadLogs" class="btn">Download Logs</button>
+    <div>Mode: <code id="mode">—</code></div>
+    <div>Policy Version: <code id="version">—</code></div>
+    <div>Last Reload: <span id="lastReload" class="muted">—</span></div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Allowed</div>
+      <div id="allow" class="value">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Blocked</div>
+      <div id="block" class="value">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Monitored</div>
+      <div id="monitor" class="value">—</div>
+    </div>
+  </div>
+
+  <details open>
+    <summary><strong>Current Rules</strong> <span class="muted">(from /policy)</span></summary>
+    <table>
+      <thead>
+        <tr><th>Rule ID</th><th>Category</th><th>Description</th><th>Pattern</th></tr>
+      </thead>
+      <tbody id="rulesBody">
+        <tr><td colspan="4" class="muted">Loading…</td></tr>
+      </tbody>
+    </table>
+  </details>
+
+  <h3>Rule Hits</h3>
+  <table>
+    <thead>
+      <tr><th>Rule ID</th><th>Hits</th></tr>
+    </thead>
+    <tbody id="ruleHits">
+      <tr><td colspan="2" class="muted">Waiting for data…</td></tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    Auto-refreshing every 2 seconds. Edit <code>configs/policy.yaml</code> and click <strong>Force Policy Reload</strong> to pick up changes.
+  </div>
+
+  <script>
+    async function fetchJSON(url, opts) {
+      const res = await fetch(url, opts);
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json();
+    }
+    async function forceReload() {
+      try {
+        const r = await fetchJSON('/admin/reload', {method:'POST'});
+        document.getElementById('lastReload').textContent = new Date(r.last_reload_epoch*1000).toLocaleString();
+        await refreshPolicy();
+      } catch (e) { console.error(e); }
+    }
+    async function refreshPolicy() {
+      try {
+        const p = await fetchJSON('/policy');
+        document.getElementById('version').textContent = p.version || '—';
+        const tbody = document.getElementById('rulesBody');
+        tbody.innerHTML = '';
+        const rules = p.deny_patterns || [];
+        if (rules.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="muted">No rules defined.</td></tr>';
+        } else {
+          for (const r of rules) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${r.id}</td><td>${r.category||''}</td><td>${r.description||''}</td><td><code>${r.pattern}</code></td>`;
+            tbody.appendChild(tr);
+          }
+        }
+      } catch (e) { console.error(e); }
+    }
+    async function refreshMetrics() {
+      try {
+        const data = await fetchJSON('/metrics');
+        document.getElementById('allow').textContent = data.allow ?? 0;
+        document.getElementById('block').textContent = data.block ?? 0;
+        document.getElementById('monitor').textContent = data.monitor ?? 0;
+        document.getElementById('mode').textContent = data.monitor_only ? 'MONITOR' : 'BLOCK';
+        if (data.policy_version) document.getElementById('version').textContent = data.policy_version;
+        if (data.last_reload_epoch) document.getElementById('lastReload').textContent = new Date(data.last_reload_epoch*1000).toLocaleString();
+        const tbody = document.getElementById('ruleHits');
+        tbody.innerHTML = '';
+        const rh = data.rule_hits || {};
+        const keys = Object.keys(rh);
+        if (keys.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="2" class="muted">No rule hits yet.</td></tr>';
+        } else {
+          keys.sort();
+          for (const k of keys) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${k}</td><td>${rh[k]}</td>`;
+            tbody.appendChild(tr);
+          }
+        }
+      } catch (e) { console.error(e); }
+    }
+    async function downloadLogs() {
+      try {
+        const res = await fetch('/admin/logs');
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'asg.log';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (e) { console.error(e); }
+    }
+    document.getElementById('reloadBtn').addEventListener('click', forceReload);
+    document.getElementById('downloadLogs').addEventListener('click', downloadLogs);
+    refreshPolicy();
+    refreshMetrics();
+    setInterval(refreshMetrics, 2000);
+  </script>
+</body>
+</html>

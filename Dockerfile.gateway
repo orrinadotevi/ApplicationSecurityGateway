@@ -4,7 +4,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY src /app/src
 COPY configs /app/configs
+COPY static /app/static
+COPY logs /app/logs
 ENV POLICY_PATH=/app/configs/policy.yaml
 ENV LLM_ENDPOINT=http://mock-llm:8001/echo
+ENV LOG_DIR=/app/logs
+# ENV MONITOR_ONLY=true  # uncomment to default to monitor mode
 EXPOSE 8000
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

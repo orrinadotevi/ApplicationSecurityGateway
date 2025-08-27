@@ -1,2 +1,19 @@
-deny_patterns: []
 max_tokens: 800
+
+deny_patterns:
+  - id: R-PI-001
+    description: Prompt injection — "ignore previous instructions"
+    category: PromptInjection
+    pattern: (?i)\bignore\s+previous\s+instructions\b
+  - id: R-PI-002
+    description: Policy evasion
+    category: PromptInjection
+    pattern: (?i)\b(disregard|forget)\s+(all|previous)\s+(rules|instructions)\b
+  - id: R-EX-001
+    description: Data exfiltration for SSNs
+    category: Exfiltration
+    pattern: (?i)\b(export|dump|list)\b.*\b(ssn|social\s+security)\b
+  - id: R-EX-002
+    description: Mass data exfiltration
+    category: Exfiltration
+    pattern: (?i)\b(export|dump|download)\b.*\b(all|every|entire)\b.*\b(records|database|employees?)\b

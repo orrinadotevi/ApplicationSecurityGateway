@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gateway
+    image: llm-asg-gateway:step2.5
     ports:
       - "8000:8000"
     depends_on:
@@ -10,10 +11,13 @@ services:
     environment:
       - POLICY_PATH=/app/configs/policy.yaml
       - LLM_ENDPOINT=http://mock-llm:8001/echo
+      - LOG_DIR=/app/logs
+      # - MONITOR_ONLY=true
 
   mock-llm:
     build:
       context: .
       dockerfile: Dockerfile.mockllm
+    image: llm-asg-mock:step2.5
     ports:
       - "8001:8001"
