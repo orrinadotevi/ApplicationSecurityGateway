@@ -12,6 +12,7 @@ services:
       - POLICY_PATH=/app/configs/policy.yaml
       - LLM_ENDPOINT=http://mock-llm:8001/echo
       - LOG_DIR=/app/logs
+      - STATIC_DIR=/app/static
       # - MONITOR_ONLY=true
 
   mock-llm:
