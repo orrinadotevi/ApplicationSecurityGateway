@@ -13,7 +13,12 @@ services:
       - LLM_ENDPOINT=http://mock-llm:8001/echo
       - LOG_DIR=/app/logs
       - STATIC_DIR=/app/static
+      - ADMIN_TOKEN=changeme123
       # - MONITOR_ONLY=true
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./static:/app/static:ro
+      - ./logs:/app/logs
 
   mock-llm:
     build:
@@ -22,3 +27,4 @@ services:
     image: llm-asg-mock:step2.5
     ports:
       - "8001:8001"
+

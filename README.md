@@ -289,5 +289,10 @@ Powershell: curl -Method POST http://localhost:8000/admin/mode `
   -Headers @{"Content-Type"="application/json"} `
   -Body '{"monitor_only": true}'
 
+CMD: curl -X POST http://localhost:8000/admin/mode -H "Content-Type: application/json" -d "{\"monitor_only\": false}"
+Powershell: curl -Method POST http://localhost:8000/admin/mode `
+  -Headers @{"Content-Type"="application/json"} `
+  -Body '{"monitor_only": false}'
+
 ## Tests
 pytest -q

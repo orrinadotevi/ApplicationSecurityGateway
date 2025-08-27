@@ -19,6 +19,26 @@
     .footer { margin-top: 24px; color: #777; font-size: 12px; }
     .btn { padding:8px 12px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer; }
     code { background:#f5f5f5; padding:2px 4px; border-radius:4px; }
+
+    /* Toggle switch styling */
+    .switch {
+      position: relative; display: inline-block; width: 48px; height: 24px;
+    }
+    .switch input { display: none; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #ccc; transition: .3s; border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 18px; width: 18px;
+      left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #4CAF50; }
+    input:checked + .slider:before { transform: translateX(24px); }
+
+    /* Simple chart container */
+    .chart-wrap { margin-top: 8px; }
+    #abmChart { border: 1px solid #eee; border-radius: 8px; }
   </style>
 </head>
 <body>
@@ -28,7 +48,19 @@
   <div class="row">
     <button id="reloadBtn" class="btn">Force Policy Reload</button>
     <button id="downloadLogs" class="btn">Download Logs</button>
-    <div>Mode: <code id="mode">—</code></div>
+
+    <!-- MODE TOGGLE (added) -->
+    <div>
+      Mode:
+      <label class="switch" title="Toggle Monitor mode on/off">
+        <input type="checkbox" id="modeToggle">
+        <span class="slider"></span>
+      </label>
+      <span id="modeLabel" style="margin-left:8px;">—</span>
+      <!-- Keep the original code element for backward-compat text (will mirror the label) -->
+      <code id="mode" style="margin-left:8px;">—</code>
+    </div>
+
     <div>Policy Version: <code id="version">—</code></div>
     <div>Last Reload: <span id="lastReload" class="muted">—</span></div>
   </div>
@@ -46,6 +78,12 @@
       <div class="label">Monitored</div>
       <div id="monitor" class="value">—</div>
     </div>
+  </div>
+
+  <!-- VISUAL COUNTER GRAPH (added) -->
+  <div class="chart-wrap">
+    <canvas id="abmChart" width="540" height="220"></canvas>
+    <div class="muted">Bar chart updates every 2s (Allow / Block / Monitor).</div>
   </div>
 
   <details open>
@@ -75,77 +113,190 @@
   </div>
 
   <script>
-    async function fetchJSON(url, opts) {
-      const res = await fetch(url, opts);
-      if (!res.ok) throw new Error(await res.text());
-      return await res.json();
+  // --- CONFIG: Admin token (set same value as ADMIN_TOKEN env var) ---
+  const ADMIN_TOKEN = "changeme123";  // TODO: replace in production!
+
+  // --- Simple fetch helper that adds Authorization automatically for admin endpoints
+  async function fetchJSON(url, opts = {}) {
+    // Add Bearer header only for /admin routes
+    if (url.startsWith('/admin')) {
+      opts.headers = Object.assign({}, opts.headers || {}, {
+        "Authorization": "Bearer " + ADMIN_TOKEN
+      });
     }
-    async function forceReload() {
-      try {
-        const r = await fetchJSON('/admin/reload', {method:'POST'});
-        document.getElementById('lastReload').textContent = new Date(r.last_reload_epoch*1000).toLocaleString();
-        await refreshPolicy();
-      } catch (e) { console.error(e); }
-    }
-    async function refreshPolicy() {
-      try {
-        const p = await fetchJSON('/policy');
-        document.getElementById('version').textContent = p.version || '—';
-        const tbody = document.getElementById('rulesBody');
-        tbody.innerHTML = '';
-        const rules = p.deny_patterns || [];
-        if (rules.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" class="muted">No rules defined.</td></tr>';
-        } else {
-          for (const r of rules) {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${r.id}</td><td>${r.category||''}</td><td>${r.description||''}</td><td><code>${r.pattern}</code></td>`;
-            tbody.appendChild(tr);
-          }
+    const res = await fetch(url, opts);
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json();
+  }
+
+  // --- Admin actions
+  async function forceReload() {
+    try {
+      const r = await fetchJSON('/admin/reload', { method: 'POST' });
+      document.getElementById('lastReload').textContent =
+        new Date(r.last_reload_epoch * 1000).toLocaleString();
+      await refreshPolicy();
+    } catch (e) { console.error(e); }
+  }
+
+  async function setMode(monitor) {
+    try {
+      const r = await fetchJSON('/admin/mode', {
+        method: 'POST',
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + ADMIN_TOKEN },
+        body: JSON.stringify({ monitor_only: monitor })
+      });
+      console.log("Mode set:", r);
+    } catch (e) { console.error(e); }
+  }
+
+  // --- Data fetchers for policy & metrics
+  async function refreshPolicy() {
+    try {
+      const p = await fetch('/policy').then(r => r.json());
+      document.getElementById('version').textContent = p.version || '—';
+      const tbody = document.getElementById('rulesBody');
+      tbody.innerHTML = '';
+      const rules = p.deny_patterns || [];
+      if (rules.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="muted">No rules defined.</td></tr>';
+      } else {
+        for (const r of rules) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.id}</td><td>${r.category || ''}</td><td>${r.description || ''}</td><td><code>${r.pattern}</code></td>`;
+          tbody.appendChild(tr);
         }
-      } catch (e) { console.error(e); }
-    }
-    async function refreshMetrics() {
-      try {
-        const data = await fetchJSON('/metrics');
-        document.getElementById('allow').textContent = data.allow ?? 0;
-        document.getElementById('block').textContent = data.block ?? 0;
-        document.getElementById('monitor').textContent = data.monitor ?? 0;
-        document.getElementById('mode').textContent = data.monitor_only ? 'MONITOR' : 'BLOCK';
-        if (data.policy_version) document.getElementById('version').textContent = data.policy_version;
-        if (data.last_reload_epoch) document.getElementById('lastReload').textContent = new Date(data.last_reload_epoch*1000).toLocaleString();
-        const tbody = document.getElementById('ruleHits');
-        tbody.innerHTML = '';
-        const rh = data.rule_hits || {};
-        const keys = Object.keys(rh);
-        if (keys.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="2" class="muted">No rule hits yet.</td></tr>';
-        } else {
-          keys.sort();
-          for (const k of keys) {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${k}</td><td>${rh[k]}</td>`;
-            tbody.appendChild(tr);
-          }
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  // Simple canvas bar chart (Allow / Block / Monitor)
+  function drawABMChart(allow, block, monitor) {
+    const canvas = document.getElementById('abmChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+
+    // Chart paddings
+    const pad = { top: 20, right: 20, bottom: 30, left: 40 };
+    const cw = w - pad.left - pad.right;
+    const ch = h - pad.top - pad.bottom;
+
+    // Data & scale
+    const values = [allow, block, monitor];
+    const labels = ['Allow', 'Block', 'Monitor'];
+    const colors = ['#4CAF50', '#E57373', '#64B5F6'];
+    const maxVal = Math.max(1, ...values);
+    const barW = cw / values.length * 0.6;
+    const gap = cw / values.length * 0.4;
+
+    // Axes (simple baseline)
+    ctx.strokeStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top);
+    ctx.lineTo(pad.left, pad.top + ch);
+    ctx.lineTo(pad.left + cw, pad.top + ch);
+    ctx.stroke();
+
+    // Bars
+    values.forEach((v, i) => {
+      const x = pad.left + i * (barW + gap) + gap/2;
+      const barH = (v / maxVal) * (ch - 10);
+      const y = pad.top + ch - barH;
+
+      ctx.fillStyle = colors[i];
+      ctx.fillRect(x, y, barW, barH);
+
+      // Value label
+      ctx.fillStyle = '#333';
+      ctx.font = '12px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(v), x + barW/2, y - 6);
+
+      // Category label
+      ctx.fillStyle = '#666';
+      ctx.fillText(labels[i], x + barW/2, pad.top + ch + 16);
+    });
+  }
+
+  async function refreshMetrics() {
+    try {
+      const data = await fetch('/metrics').then(r => r.json());
+      const allow = data.allow ?? 0;
+      const block = data.block ?? 0;
+      const monitor = data.monitor ?? 0;
+
+      // Update counters
+      document.getElementById('allow').textContent = allow;
+      document.getElementById('block').textContent = block;
+      document.getElementById('monitor').textContent = monitor;
+
+      // Sync toggle + labels
+      const isMonitor = !!data.monitor_only;
+      const toggle = document.getElementById('modeToggle');
+      toggle.checked = isMonitor;
+      document.getElementById('modeLabel').textContent = isMonitor ? "MONITOR" : "BLOCK";
+      document.getElementById('mode').textContent = isMonitor ? "MONITOR" : "BLOCK";
+
+      if (data.policy_version) document.getElementById('version').textContent = data.policy_version;
+      if (data.last_reload_epoch) {
+        document.getElementById('lastReload').textContent =
+          new Date(data.last_reload_epoch * 1000).toLocaleString();
+      }
+
+      // Redraw chart with latest numbers
+      drawABMChart(allow, block, monitor);
+
+      // Update rule hits table
+      const rh = data.rule_hits || {};
+      const tbody = document.getElementById('ruleHits');
+      tbody.innerHTML = '';
+      const keys = Object.keys(rh);
+      if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" class="muted">No rule hits yet.</td></tr>';
+      } else {
+        keys.sort();
+        for (const k of keys) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${k}</td><td>${rh[k]}</td>`;
+          tbody.appendChild(tr);
         }
-      } catch (e) { console.error(e); }
-    }
-    async function downloadLogs() {
-      try {
-        const res = await fetch('/admin/logs');
-        const blob = await res.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'asg.log';
-        a.click();
-        URL.revokeObjectURL(a.href);
-      } catch (e) { console.error(e); }
-    }
-    document.getElementById('reloadBtn').addEventListener('click', forceReload);
-    document.getElementById('downloadLogs').addEventListener('click', downloadLogs);
-    refreshPolicy();
-    refreshMetrics();
-    setInterval(refreshMetrics, 2000);
-  </script>
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  async function downloadLogs() {
+    try {
+      const res = await fetch('/admin/logs', {
+        headers: { "Authorization": "Bearer " + ADMIN_TOKEN }
+      });
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'asg.log';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { console.error(e); }
+  }
+
+  // Hook up buttons + toggle
+  document.getElementById('reloadBtn').addEventListener('click', forceReload);
+  document.getElementById('downloadLogs').addEventListener('click', downloadLogs);
+  document.getElementById('modeToggle').addEventListener('change', async (e) => {
+    const monitor = e.target.checked;
+    await setMode(monitor);
+    document.getElementById('modeLabel').textContent = monitor ? "MONITOR" : "BLOCK";
+    document.getElementById('mode').textContent = monitor ? "MONITOR" : "BLOCK";
+  });
+
+  // Initial paint & auto-refresh
+  refreshPolicy();
+  refreshMetrics();
+  setInterval(refreshMetrics, 2000);
+</script>
+
 </body>
 </html>
