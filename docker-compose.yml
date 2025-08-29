@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gateway
-    image: llm-asg-gateway:step2.5
+    image: llm-asg-gateway:step3
     ports:
       - "8000:8000"
     depends_on:
@@ -14,17 +14,25 @@ services:
       - LOG_DIR=/app/logs
       - STATIC_DIR=/app/static
       - ADMIN_TOKEN=changeme123
-      # - MONITOR_ONLY=true
+      - REDACTION_ENABLED=true
+      - REDACTION_KEEP_LAST4=true
+      - REDACT_UPSTREAM=true
+      - MAX_REQUEST_BYTES=32768
     volumes:
       - ./configs:/app/configs:ro
       - ./static:/app/static:ro
       - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
 
   mock-llm:
     build:
       context: .
       dockerfile: Dockerfile.mockllm
-    image: llm-asg-mock:step2.5
+    image: llm-asg-mock:step3
     ports:
       - "8001:8001"
 

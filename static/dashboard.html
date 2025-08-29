@@ -21,9 +21,7 @@
     code { background:#f5f5f5; padding:2px 4px; border-radius:4px; }
 
     /* Toggle switch styling */
-    .switch {
-      position: relative; display: inline-block; width: 48px; height: 24px;
-    }
+    .switch { position: relative; display: inline-block; width: 48px; height: 24px; }
     .switch input { display: none; }
     .slider {
       position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
@@ -49,7 +47,7 @@
     <button id="reloadBtn" class="btn">Force Policy Reload</button>
     <button id="downloadLogs" class="btn">Download Logs</button>
 
-    <!-- MODE TOGGLE (added) -->
+    <!-- MODE TOGGLE -->
     <div>
       Mode:
       <label class="switch" title="Toggle Monitor mode on/off">
@@ -57,7 +55,6 @@
         <span class="slider"></span>
       </label>
       <span id="modeLabel" style="margin-left:8px;">—</span>
-      <!-- Keep the original code element for backward-compat text (will mirror the label) -->
       <code id="mode" style="margin-left:8px;">—</code>
     </div>
 
@@ -78,9 +75,15 @@
       <div class="label">Monitored</div>
       <div id="monitor" class="value">—</div>
     </div>
+    <!-- NEW: Redactions chip -->
+    <div class="card">
+      <div class="label">Redactions</div>
+      <div id="redactionsTotal" class="value">—</div>
+      <div class="muted" id="redactionsBreakdown">ssn:0 • email:0 • phone:0 • card:0</div>
+    </div>
   </div>
 
-  <!-- VISUAL COUNTER GRAPH (added) -->
+  <!-- VISUAL COUNTER GRAPH -->
   <div class="chart-wrap">
     <canvas id="abmChart" width="540" height="220"></canvas>
     <div class="muted">Bar chart updates every 2s (Allow / Block / Monitor).</div>
@@ -118,7 +121,6 @@
 
   // --- Simple fetch helper that adds Authorization automatically for admin endpoints
   async function fetchJSON(url, opts = {}) {
-    // Add Bearer header only for /admin routes
     if (url.startsWith('/admin')) {
       opts.headers = Object.assign({}, opts.headers || {}, {
         "Authorization": "Bearer " + ADMIN_TOKEN
@@ -135,7 +137,8 @@
       const r = await fetchJSON('/admin/reload', { method: 'POST' });
       document.getElementById('lastReload').textContent =
         new Date(r.last_reload_epoch * 1000).toLocaleString();
-      await refreshPolicy();
+      // Refresh both policy and metrics so the page reflects changes immediately
+      await Promise.all([refreshPolicy(), refreshMetrics()]);
     } catch (e) { console.error(e); }
   }
 
@@ -188,7 +191,7 @@
     // Data & scale
     const values = [allow, block, monitor];
     const labels = ['Allow', 'Block', 'Monitor'];
-    const colors = ['#4CAF50', '#E57373', '#64B5F6'];
+    const colors = ['#4CAF50', '#E73E3E', '#3B82F6']; // green/red/blue
     const maxVal = Math.max(1, ...values);
     const barW = cw / values.length * 0.6;
     const gap = cw / values.length * 0.4;
@@ -247,6 +250,15 @@
           new Date(data.last_reload_epoch * 1000).toLocaleString();
       }
 
+      // NEW: update redactions chip
+      const reds = data.redactions || {};
+      const rSSN = reds.ssn || 0, rEmail = reds.email || 0, rPhone = reds.phone || 0, rCard = reds.card || 0;
+      const rTotal = rSSN + rEmail + rPhone + rCard;
+      const rtEl = document.getElementById('redactionsTotal');
+      const rbEl = document.getElementById('redactionsBreakdown');
+      if (rtEl) rtEl.textContent = rTotal;
+      if (rbEl) rbEl.textContent = `ssn:${rSSN} • email:${rEmail} • phone:${rPhone} • card:${rCard}`;
+
       // Redraw chart with latest numbers
       drawABMChart(allow, block, monitor);
 
@@ -300,3 +312,4 @@
 
 </body>
 </html>
+
