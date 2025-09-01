@@ -1,13 +1,27 @@
 services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"        # optional: access from host
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-sSf", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   gateway:
     build:
       context: .
       dockerfile: Dockerfile.gateway
-    image: llm-asg-gateway:step3
-    ports:
-      - "8000:8000"
+    image: llm-asg-gateway:step4
     depends_on:
       - mock-llm
+      - ollama
+    ports:
+      - "8000:8000"
     environment:
       - POLICY_PATH=/app/configs/policy.yaml
       - LLM_ENDPOINT=http://mock-llm:8001/echo
@@ -18,12 +32,23 @@ services:
       - REDACTION_KEEP_LAST4=true
       - REDACT_UPSTREAM=true
       - MAX_REQUEST_BYTES=32768
+      - COUNT_ALL_MATCHES=true
+      - LLM_PROVIDER=OLLAMA
+      - OLLAMA_HOST=http://ollama:11434  # point to service
+      - OLLAMA_MODEL=llama3
+      - LLM_TIMEOUT_SECS=60
+      - RETRY_MAX_ATTEMPTS=2
+      - RETRY_BASE_MS=200
+      - ADMIN_IP_ALLOWLIST=127.0.0.1,172.18.0.0/16
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_WINDOW_SECS=60
+      - RATE_LIMIT_MAX_REQUESTS=60
     volumes:
       - ./configs:/app/configs:ro
       - ./static:/app/static:ro
       - ./logs:/app/logs
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
       timeout: 3s
       retries: 3
@@ -32,7 +57,60 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mockllm
-    image: llm-asg-mock:step3
+    image: llm-asg-mock:step4
     ports:
       - "8001:8001"
 
+volumes:
+  ollama:
+
+# services:
+#   gateway:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.gateway
+#     image: llm-asg-gateway:step4
+#     ports:
+#       - "8000:8000"
+#     depends_on:
+#       - mock-llm
+#     environment:
+#       - POLICY_PATH=/app/configs/policy.yaml
+#       - LLM_ENDPOINT=http://mock-llm:8001/echo
+#       - LOG_DIR=/app/logs
+#       - STATIC_DIR=/app/static
+#       - ADMIN_TOKEN=changeme123
+#       - REDACTION_ENABLED=true
+#       - REDACTION_KEEP_LAST4=true
+#       - REDACT_UPSTREAM=true
+#       - MAX_REQUEST_BYTES=32768
+#       - COUNT_ALL_MATCHES=true
+#       - LLM_PROVIDER=MOCK        # MOCK | OPENAI | OPENAI_COMPAT | OLLAMA
+#       # OpenAI-compatible (uncomment to use a real LLM)
+#       # - LLM_PROVIDER=OPENAI_COMPAT
+#       # - OPENAI_BASE_URL=https://api.openai.com
+#       # - OPENAI_API_KEY=sk-...
+#       # - OPENAI_MODEL=gpt-4o-mini
+#       # - OPENAI_TEMPERATURE=0.2
+#       # Ollama (local)
+#       # - LLM_PROVIDER=OLLAMA
+#       # - OLLAMA_HOST=http://host.docker.internal:11434
+#       # - OLLAMA_MODEL=llama3
+#     volumes:
+#       - ./configs:/app/configs:ro
+#       - ./static:/app/static:ro
+#       - ./logs:/app/logs
+#     healthcheck:
+#       test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+#       interval: 15s
+#       timeout: 3s
+#       retries: 3
+
+#   mock-llm:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.mockllm
+#     image: llm-asg-mock:step4
+#     ports:
+#       - "8001:8001"
+    

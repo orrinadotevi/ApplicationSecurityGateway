@@ -60,6 +60,7 @@
 
     <div>Policy Version: <code id="version">—</code></div>
     <div>Last Reload: <span id="lastReload" class="muted">—</span></div>
+    <div>Provider: <code id="prov">—</code></div>
   </div>
 
   <div class="cards">
@@ -277,6 +278,11 @@
           tbody.appendChild(tr);
         }
       }
+      if (data.provider) {
+        const p = data.provider;
+        const provEl = document.getElementById('prov');
+      if (provEl) provEl.textContent = `${p.name}:${p.model}`;
+  }
     } catch (e) { console.error(e); }
   }
 

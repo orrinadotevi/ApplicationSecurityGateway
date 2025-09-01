@@ -1,19 +1,26 @@
 max_tokens: 800
-
 deny_patterns:
   - id: R-PI-001
+    category: PromptInjection
     description: Prompt injection — "ignore previous instructions"
-    category: PromptInjection
-    pattern: (?i)\bignore\s+previous\s+instructions\b
+    pattern: "(?i)ignore (all|any|previous) (instructions|rules)"
+    severity: 3
+
   - id: R-PI-002
-    description: Policy evasion
-    category: PromptInjection
-    pattern: (?i)\b(disregard|forget)\s+(all|previous)\s+(rules|instructions)\b
-  - id: R-EX-001
-    description: Data exfiltration for SSNs
-    category: Exfiltration
-    pattern: (?i)\b(export|dump|list)\b.*\b(ssn|social\s+security)\b
-  - id: R-EX-002
-    description: Mass data exfiltration
-    category: Exfiltration
-    pattern: (?i)\b(export|dump|download)\b.*\b(all|every|entire)\b.*\b(records|database|employees?)\b
+    category: DataExfiltration
+    description: Attempts to exfiltrate credentials or secrets
+    pattern: "(?i)(export|leak).*(password|secret|api[-_ ]?key)"
+    severity: 4
+
+  - id: R-PI-003
+    category: PII
+    description: Asks for social security numbers
+    pattern: "(?i)(ssn|social security number)"
+    severity: 5
+
+  - id: R-PI-004
+    category: SafetyBypass
+    description: Jailbreak phrases
+    pattern: "(?i)(jailbreak|do anything now|DAN)"
+    severity: 2
+
