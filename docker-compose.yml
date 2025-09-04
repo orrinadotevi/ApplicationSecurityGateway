@@ -44,7 +44,6 @@ services:
       - RATE_LIMIT_WINDOW_SECS=60
       - RATE_LIMIT_MAX_REQUESTS=60
       - JSON_LOGS=true
-      - RATE_LIMIT_ENABLED=true
       - RATE_LIMIT_PER_MIN=60
       - RATE_LIMIT_BURST=20
       - FAIL_OPEN=false

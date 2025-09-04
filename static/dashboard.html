@@ -115,6 +115,8 @@
   <script>
   // --- CONFIG: Admin token (set same value as ADMIN_TOKEN env var) ---
   const ADMIN_TOKEN = "changeme123";  // TODO: replace in production!
+  // Keep the current list of rule IDs from /policy so we can render all rows.
+  let RULE_IDS = [];
 
   // Cache-busting helper
   function noStore(url) {
@@ -161,7 +163,7 @@
     }
   }
 
-  // Policy table
+  // Policy table (+ capture list of rule IDs)
   async function refreshPolicy() {
     try {
       const p = await fetchJSON('/policy');
@@ -172,6 +174,8 @@
       if (!tbody) return;
       tbody.innerHTML = '';
       const rules = p.deny_patterns || [];
+      RULE_IDS = rules.map(r => r.id);  // <-- keep all rule IDs for hits table
+
       if (rules.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" class="muted">No rules defined.</td></tr>';
       } else {
@@ -231,6 +235,34 @@
     });
   }
 
+  // Render all rule hits every time (no filtering)
+  function renderRuleHits(rh) {
+    const tbody = document.getElementById('ruleHits');
+    if (!tbody) return;
+    try {
+      tbody.innerHTML = '';
+
+      // Build the list of rule IDs to show: prefer RULE_IDS from /policy.
+      const ids = (RULE_IDS && RULE_IDS.length) ? [...RULE_IDS] : Object.keys(rh || {});
+      ids.sort(); // alphabetical by Rule ID
+
+      if (ids.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" class="muted">No rules loaded.</td></tr>';
+        return;
+      }
+
+      for (const id of ids) {
+        const hits = (rh && typeof rh[id] !== 'undefined') ? rh[id] : 0;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${id}</td><td>${hits}</td>`;
+        tbody.appendChild(tr);
+      }
+    } catch (e) {
+      console.error("renderRuleHits error:", e);
+      tbody.innerHTML = '<tr><td colspan="2" class="muted">Error rendering rule hits.</td></tr>';
+    }
+  }
+
   // Metrics + chips
   async function refreshMetrics() {
     try {
@@ -240,6 +272,7 @@
       const allow = data.allow ?? 0;
       const block = data.block ?? 0;
       const monitor = data.monitor ?? 0;
+      document.getElementById('allow')?.appendChild(document.createTextNode(''));
       const elAllow = document.getElementById('allow');
       const elBlock = document.getElementById('block');
       const elMon   = document.getElementById('monitor');
@@ -276,8 +309,9 @@
       if (rtEl) rtEl.textContent = rTotal;
       if (rbEl) rbEl.textContent = `ssn:${rSSN} • email:${rEmail} • phone:${rPhone} • card:${rCard}`;
 
-      // Latency percentiles (server returns p50_ms/p90_ms/p99_ms)
+      // Latency percentiles
       if ('p50_ms' in data || 'p90_ms' in data || 'p99_ms' in data) {
+        document.getElementById('p50')?.appendChild(document.createTextNode(''));
         const p50 = data.p50_ms ?? '—';
         const p90 = data.p90_ms ?? '—';
         const p99 = data.p99_ms ?? '—';
@@ -289,7 +323,7 @@
         if (L99) L99.textContent = p99;
       }
 
-      // Rate-limit (supports nested and top-level aliases)
+      // Rate-limit
       const rl = data.rate_limit || {};
       const rlEnabled = (data.rate_limit_enabled ?? rl.enabled ?? false);
       const rlPerMin  = (data.rate_limit_per_min ?? rl.per_min ?? '—');
@@ -303,6 +337,9 @@
       if (RLl) RLl.textContent = rlPerMin;
       if (RLb) RLb.textContent = rlBurst;
       if (RLd) RLd.textContent = rlDropped;
+
+      // Render ALL rule hits each refresh
+      renderRuleHits(data.rule_hits || {});
 
       // Chart
       drawABMChart(allow, block, monitor);
@@ -372,5 +409,7 @@
 
 </body>
 </html>
+
+
 
 
