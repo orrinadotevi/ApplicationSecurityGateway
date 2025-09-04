@@ -606,4 +606,68 @@ curl -Method POST http://localhost:8000/chat -Headers @{"Content-Type"="applicat
 ```powershell
 curl http://localhost:8000/metrics
 curl http://localhost:8000/metrics/prometheus
+
+
+
+# LLM-ASG (LLM Application Security Gateway)
+
+This project implements an **Application Security Gateway for LLM usage**.  
+It enforces security policies, redacts sensitive information, and exposes monitoring/controls via an interactive dashboard.
+
+---
+
+## 🚀 Features
+
+### ✅ Core Gateway
+- Policy enforcement (regex deny patterns, categories, severity levels).
+- Monitor-only mode (allows requests but flags/logs violations).
+- PII redaction (SSN, phone, email, card numbers).
+- Configurable request size guard (default 32KB).
+- Force policy reload without restart (`/admin/reload`).
+- Admin token + IP allow-list (restrict sensitive endpoints).
+- Security headers + CORS protection.
+
+### ✅ LLM Provider Adapters
+- **MOCK** → simple echo server for testing.
+- **OPENAI / OPENAI_COMPAT** → forwards to OpenAI-compatible APIs.
+- **OLLAMA** → forwards to a local Ollama instance.
+- Fail-open option (`FAIL_OPEN=true`) to return fallback responses when upstream is unavailable.
+
+### ✅ Metrics & Observability
+- Counters: allowed, blocked, monitored requests.
+- Rule hit counts (per rule ID).
+- Redaction counts (per PII type).
+- **Latency percentiles** (p50, p90, p99) + histogram.
+- **Rate limiting metrics** (enabled flag, per-minute limit, burst, dropped count).
+- Prometheus endpoint (`/metrics/prometheus`) for scraping.
+
+### ✅ Rate Limiting
+- Token-bucket rate limiter per client IP.
+- Configurable:
+  - `RATE_LIMIT_ENABLED` (true/false)
+  - `RATE_LIMIT_PER_MIN` (default 60/min)
+  - `RATE_LIMIT_BURST` (default 20)
+- Returns `429 Too Many Requests` with `Retry-After` header when exceeded.
+- Counters surfaced in `/metrics`.
+
+### ✅ Dashboard
+- Live auto-refresh (2s interval).
+- Cards:
+  - Allow / Block / Monitor
+  - Redactions (with breakdown)
+  - **Latency (p50/p90/p99)**
+  - **Rate limit status + dropped count**
+- Provider chip (shows provider + model dynamically).
+- Bar chart of Allow / Block / Monitor over time.
+- Force reload button, log download button.
+- Rule list + rule hits table.
+
+---
+
+## 🛠️ Usage
+
+### Build & Run
+```bash
+docker compose up --build -d
+
 ```
