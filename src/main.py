@@ -11,7 +11,7 @@ LLM-ASG Gateway (Step 5) — Hardening & Performance
 """
 
 from fastapi import FastAPI, HTTPException, Request, Depends
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -707,7 +707,29 @@ async def set_mode(payload: dict, request: Request, _: HTTPAuthorizationCredenti
 
 @app.get("/admin/logs")
 async def download_logs(_: HTTPAuthorizationCredentials = Depends(require_admin)):
-    return FileResponse(LOG_FILE, media_type="text/plain", filename="asg.log")
+    # Flush all logger handlers to minimize stale data and avoid partial buffers
+    try:
+        for h in logger.handlers:
+            try:
+                h.flush()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Snapshot the current file contents (avoid streaming while file is growing)
+    try:
+        with open(LOG_FILE, "rb") as f:
+            data = f.read()
+    except FileNotFoundError:
+        data = b""
+
+    headers = {
+        "Cache-Control": "no-store",
+        'Content-Disposition': 'attachment; filename="asg.log"',
+    }
+    # Return a fixed-length body so Content-Length matches exactly
+    return Response(content=data, media_type="text/plain; charset=utf-8", headers=headers)
 
 @app.post("/admin/metrics/reset")
 async def reset_metrics(_: HTTPAuthorizationCredentials = Depends(require_admin)):

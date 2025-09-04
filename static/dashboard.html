@@ -272,7 +272,6 @@
       const allow = data.allow ?? 0;
       const block = data.block ?? 0;
       const monitor = data.monitor ?? 0;
-      document.getElementById('allow')?.appendChild(document.createTextNode(''));
       const elAllow = document.getElementById('allow');
       const elBlock = document.getElementById('block');
       const elMon   = document.getElementById('monitor');
@@ -311,7 +310,6 @@
 
       // Latency percentiles
       if ('p50_ms' in data || 'p90_ms' in data || 'p99_ms' in data) {
-        document.getElementById('p50')?.appendChild(document.createTextNode(''));
         const p50 = data.p50_ms ?? '—';
         const p90 = data.p90_ms ?? '—';
         const p99 = data.p99_ms ?? '—';
@@ -364,22 +362,50 @@
     }
   }
 
-  // Download logs
+  // Download logs (snapshot download; expects Content-Disposition: attachment)
   async function downloadLogs() {
     try {
       const res = await fetch(noStore('/admin/logs'), {
+        method: 'GET',
         headers: { "Authorization": "Bearer " + ADMIN_TOKEN },
         cache: 'no-store'
       });
-      if (!res.ok) throw new Error(await res.text());
+
+      // Handle auth / allow-list problems explicitly
+      if (!res.ok) {
+        let msg = `Failed to download logs (HTTP ${res.status}).`;
+        if (res.status === 401 || res.status === 403) {
+          msg += `\n\nCheck that ADMIN_TOKEN here matches the server's ADMIN_TOKEN,`
+               + ` and if ADMIN_IP_ALLOWLIST is set, that your client IP is allowed.`;
+        }
+        try {
+          const txt = await res.text();
+          if (txt) msg += `\n\nServer said:\n${txt.slice(0, 500)}`;
+        } catch {}
+        console.error('downloadLogs error:', msg);
+        alert(msg);
+        return;
+      }
+
+      // Use Blob to preserve bytes exactly
       const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      // Try to use server-provided filename; fallback to asg.log
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename\*=UTF-8''([^;]+)|filename="([^"]+)"/i);
+      const filename = decodeURIComponent(match?.[1] || match?.[2] || 'asg.log');
+
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'asg.log';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (e) {
-      console.error("downloadLogs error:", e);
+      console.error("downloadLogs exception:", e);
+      alert("Could not download logs. See console for details.");
     }
   }
 
@@ -409,6 +435,7 @@
 
 </body>
 </html>
+
 
 
 
