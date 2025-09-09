@@ -153,15 +153,18 @@ def require_admin(creds: Optional[HTTPAuthorizationCredentials] = Depends(securi
 # -----------------------------------------------------------------------------
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "MOCK").upper()  # MOCK | OPENAI | OPENAI_COMPAT | OLLAMA
 
-# OpenAI-compatible
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
+# OpenAI-compatible / LM Studio
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:1234")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "openai/gpt-oss-20b")
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
-OPENAI_HEADERS = {
-    "Authorization": f"Bearer {OPENAI_API_KEY}" if OPENAI_API_KEY else "",
-    "Content-Type": "application/json",
-}
+
+# Build headers per request so we don't send an empty Authorization header
+def _openai_headers():
+    h = {"Content-Type": "application/json"}
+    if OPENAI_API_KEY:
+        h["Authorization"] = f"Bearer {OPENAI_API_KEY}"
+    return h
 
 # Ollama (local)
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
@@ -181,7 +184,8 @@ async def _call_llm(text: str, request_id: str):
             return resp.json()
 
     elif LLM_PROVIDER in ("OPENAI", "OPENAI_COMPAT"):
-        if not OPENAI_API_KEY:
+        # For OPENAI (cloud), require API key. For OPENAI_COMPAT (e.g., LM Studio), key is optional.
+        if LLM_PROVIDER == "OPENAI" and not OPENAI_API_KEY:
             raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
         payload = {
             "model": OPENAI_MODEL,
@@ -192,7 +196,7 @@ async def _call_llm(text: str, request_id: str):
         base = OPENAI_BASE_URL.rstrip("/")
         url = f"{base}/v1/chat/completions"
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(url, headers=OPENAI_HEADERS, json=payload)
+            resp = await client.post(url, headers=_openai_headers(), json=payload)
             resp.raise_for_status()
             return resp.json()
 
@@ -569,8 +573,7 @@ async def chat(payload: dict, request: Request):
     allow = len(matches) == 0
     primary: Optional[DenyPattern] = None
     if not allow:
-        # --- TEST-SAFE: choose the FIRST rule that matched, preserving policy.yaml order ---
-        # (Some tests expect R-PI-001 to be primary over later, higher-severity rules.)
+        # Choose the FIRST rule that matched, preserving policy.yaml order (tests expect this)
         primary = matches[0]
 
         with _state_lock:
@@ -873,6 +876,7 @@ async def debug_config():
 async def debug_bodylen(request: Request):
     raw = await request.body()
     return {"path": request.url.path, "bytes": len(raw), "max": MAX_REQUEST_BYTES}
+
 
 
 

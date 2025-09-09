@@ -1,4 +1,5 @@
 services:
+  # Optional: keep Ollama around if you still want to use it for comparison
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
@@ -16,39 +17,66 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gateway
-    image: llm-asg-gateway:step4
+    image: llm-asg-gateway:step5
     depends_on:
       - mock-llm
       - ollama
     ports:
       - "8000:8000"
+    # 👇 This line lets containers reach the host as "host.docker.internal"
+    # Works on Docker Desktop; on Linux requires Docker 20.10+ (uses host-gateway).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
+      # --- Core config ---
       - POLICY_PATH=/app/configs/policy.yaml
-      - LLM_ENDPOINT=http://mock-llm:8001/echo
       - LOG_DIR=/app/logs
       - STATIC_DIR=/app/static
       - ADMIN_TOKEN=changeme123
+      - MAX_REQUEST_BYTES=32768
+      - COUNT_ALL_MATCHES=true
+      - JSON_LOGS=true
+      - FAIL_OPEN=false
+      - LAT_BUFFER=1024
+      # Step 3 redaction toggles
       - REDACTION_ENABLED=true
       - REDACTION_KEEP_LAST4=true
       - REDACT_UPSTREAM=true
-      - MAX_REQUEST_BYTES=32768
-      - COUNT_ALL_MATCHES=true
-      - LLM_PROVIDER=OLLAMA
-      - OLLAMA_HOST=http://ollama:11434  # point to service
+
+      # --- Rate limiting ---
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_PER_MIN=60
+      - RATE_LIMIT_BURST=20
+      # - RATE_LIMIT_BYPASS=true
+
+      # --- MOCK endpoint (still used by tests or monitor flows) ---
+      - LLM_ENDPOINT=http://mock-llm:8001/echo
+
+      # --- ✅ LM Studio (OpenAI-compatible) ---
+      # Switch gateway to the OpenAI-compatible adapter
+      - LLM_PROVIDER=OPENAI_COMPAT
+      # Point at LM Studio’s local server. From inside Docker, use host.docker.internal.
+      # If you changed LM Studio’s port, update 1234 accordingly.
+      - OPENAI_BASE_URL=http://host.docker.internal:1234
+      # Put the LM Studio model id shown in the UI (e.g., "Llama-3.1-8B-Instruct")
+      - OPENAI_MODEL=openai/gpt-oss-20b
+      - OPENAI_TEMPERATURE=0.2
+      # LM Studio typically doesn’t require a key; leave blank. If you set one in LM Studio,
+      # add: OPENAI_API_KEY=your_key
+      # - OPENAI_API_KEY=
+
+      # --- (Optional) keep Ollama knobs if you flip back to OLLAMA later ---
+      - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODEL=llama3
+
+      # --- Timeouts/retries (if you use them elsewhere in code) ---
       - LLM_TIMEOUT_SECS=60
       - RETRY_MAX_ATTEMPTS=2
       - RETRY_BASE_MS=200
+
+      # --- Admin access control ---
       - ADMIN_IP_ALLOWLIST=127.0.0.1,172.18.0.0/16,127.0.0.1/32
-      - RATE_LIMIT_ENABLED=true
-      - RATE_LIMIT_WINDOW_SECS=60
-      - RATE_LIMIT_MAX_REQUESTS=60
-      - JSON_LOGS=true
-      - RATE_LIMIT_PER_MIN=60
-      - RATE_LIMIT_BURST=20
-      - FAIL_OPEN=false
-      - LAT_BUFFER=1024
-     # - RATE_LIMIT_BYPASS=true
+
     volumes:
       - ./configs:/app/configs:ro
       - ./static:/app/static:ro
@@ -63,12 +91,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mockllm
-    image: llm-asg-mock:step4
+    image: llm-asg-mock:step5
     ports:
       - "8001:8001"
 
 volumes:
   ollama:
+
 
 # services:
 #   gateway:
