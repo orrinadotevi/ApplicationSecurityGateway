@@ -1,0 +1,33 @@
+name: Step6 - Gateway tests
+on:
+  push:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "Dockerfile.gateway"
+      - ".github/workflows/step6-tests.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      # keep MOCK inline for CI so no network dependency
+      MOCK_HTTP: "false"
+      JSON_LOGS: "true"
+      COUNT_ALL_MATCHES: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Pytest
+        run: pytest -q

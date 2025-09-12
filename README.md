@@ -671,3 +671,58 @@ It enforces security policies, redacts sensitive information, and exposes monito
 docker compose up --build -d
 
 ```
+
+
+
+# Step 6 — Testing & Evaluation
+
+This step validates the LLM-ASG gateway under functional and performance scenarios introduced in Step 5.
+
+## What we test
+
+- **Policy & Monitor Mode**
+  - Prompts that match deny rules are **BLOCK**ed (403) or **MONITOR**ed (200 + decision).
+  - Multiple rule hits are accumulated in `/metrics.rule_hits`.
+
+- **PII Redaction**
+  - Incoming prompts are redacted for logs/upstream (if `REDACT_UPSTREAM=true`).
+  - Category counters (`ssn`, `email`, `phone`, `card`) increment.
+
+- **Rate Limiting**
+  - Token-bucket per client IP for `POST /chat`.
+  - `X-RateLimit-Limit`, `X-RateLimit-Remaining` on success; `429` with `Retry-After` on drops.
+  - Dropped count exposed via `/metrics.rate_limit_dropped`.
+
+- **Latency Telemetry**
+  - Ring-buffer–based p50/p90/p99 reported in both flat and nested forms in `/metrics`.
+  - Simple histogram + sum/count in `/metrics/prometheus`.
+
+- **Fail-Open**
+  - If upstream is unavailable and `FAIL_OPEN=true`, we return `200` with `{fallback:true}`.
+
+## How to run tests
+
+```bash
+# Unit/integration tests
+pytest -q
+
+# Load test with k6
+k6 run load/k6-chat.js
+# Customize
+BASE=http://localhost:8000 VUS=25 DURATION=90s k6 run load/k6-chat.js
+
+
+---
+
+## What this gives you right now
+
+- **Functional coverage** for Step-5 features with **deterministic** tests (no external network).
+- A **repeatable load test** (k6) to watch percentiles, drops, and counters move.
+- A **CI pipeline** so regressions get caught on PRs.
+- Lightweight **docs** to package this step.
+
+If you want, I can also add:
+- a **Locust** scenario for longer-running soaks,
+- a **Prometheus scrape config** + Grafana dashboard JSON seeded for your `/metrics/prometheus`,
+- and **synthetic prompt suites** (CSV/JSON) to parameterize k6 by category (safe/unsafe/PII).
+::contentReference[oaicite:0]{index=0}
