@@ -17,7 +17,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gateway
-    image: llm-asg-gateway:step5
+    image: llm-asg-gateway:step7
     depends_on:
       - mock-llm
       - ollama
@@ -44,7 +44,7 @@ services:
       - REDACT_UPSTREAM=true
 
       # --- Rate limiting ---
-      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_ENABLED=false
       - RATE_LIMIT_PER_MIN=60
       - RATE_LIMIT_BURST=20
       # - RATE_LIMIT_BYPASS=true
@@ -91,7 +91,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mockllm
-    image: llm-asg-mock:step5
+    image: llm-asg-mock:step7
     ports:
       - "8001:8001"
 

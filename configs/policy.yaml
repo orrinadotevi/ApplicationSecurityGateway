@@ -1,26 +1,126 @@
+# ===== LLM-ASG Policy (Step 7) =====
 max_tokens: 800
+
+# Canonical reason codes used in logs/metrics/UI
+reason_codes:
+  PII_DETECTED: "Personally identifiable information detected"
+  OUTPUT_PII: "PII present in model output"
+  PROMPT_INJECTION: "Prompt injection attempt"
+  SAFETY_BYPASS: "Attempt to bypass safety/role constraints"
+  DATA_EXFIL_PATTERN: "Data exfiltration intent or secret extraction"
+  RATE_LIMIT: "Rate limit exceeded"
+  UNKNOWN: "Unspecified/other policy violation"
+
+# Toggleable detectors (fast, configurable)
+detectors:
+  pii:
+    enabled: true
+    types: [ssn, phone, email, credit_card]
+    redact: true
+    keep_last4: true
+    reason_code: PII_DETECTED
+
+  jailbreak:
+    enabled: true
+    patterns:
+      - "(?i)ignore (all|any|previous) (instructions|rules)"
+      - "(?i)(jailbreak|do anything now|DAN)"
+      - "(?i)repeat back your system prompt"
+    reason_code: PROMPT_INJECTION
+
+  exfil:
+    enabled: true
+    patterns:
+      - "(?i)(export|leak).*(password|secret|api[-_ ]?key)"
+      - "(?i)dump .* (database|secrets)"
+    reason_code: DATA_EXFIL_PATTERN
+
+# Your existing keyword rules, now with explicit reason_code
 deny_patterns:
   - id: R-PI-001
     category: PromptInjection
     description: Prompt injection — "ignore previous instructions"
     pattern: "(?i)ignore (all|any|previous) (instructions|rules)"
     severity: 3
+    reason_code: PROMPT_INJECTION
 
   - id: R-PI-002
     category: DataExfiltration
     description: Attempts to exfiltrate credentials or secrets
     pattern: "(?i)(export|leak).*(password|secret|api[-_ ]?key)"
     severity: 4
+    reason_code: DATA_EXFIL_PATTERN
 
   - id: R-PI-003
     category: PII
     description: Asks for social security numbers
     pattern: "(?i)(ssn|social security number)"
     severity: 5
+    reason_code: PII_DETECTED
 
   - id: R-PI-004
     category: SafetyBypass
     description: Jailbreak phrases
     pattern: "(?i)(jailbreak|do anything now|DAN)"
     severity: 2
+    reason_code: SAFETY_BYPASS
+
+# Multi-stage evaluation chain (defense-in-depth)
+decision_chain:
+  - keyword_filter        # deny_patterns, cheap regex
+  - semantic_classifier   # small transformer / embedding similarity
+  - llm_judge             # optional, budgeted fallback for borderline cases
+
+# What to do in each case
+actions:
+  on_violation: block_with_reason   # include reason_code + offending_rule
+  on_uncertain: escalate_or_mask    # escalate to llm_judge or mask/redact
+
+# Response/output guards (post-generation scan)
+response_guards:
+  enabled: true
+  recheck_output: true
+  quarantine_on_violation: true
+  reason_code_on_output_violation: OUTPUT_PII
+
+# Resilience & abuse controls
+rate_limit:
+  enabled: true
+  requests_per_minute: 60
+  burst: 10
+  reason_code_on_limit: RATE_LIMIT
+
+# Observability configuration (for Grafana/Prometheus & logs)
+telemetry:
+  emit_reason_codes: true
+  metrics:
+    requests_counter: asg_requests_total                 # labels: decision, reason_code
+    rule_hits_counter: asg_policy_hits_total             # labels: rule_id, reason_code
+    pii_leaks_counter: asg_pii_leaks_total               # labels: stage (input|output)
+    added_latency_histogram: asg_added_latency_ms_bucket # labels: stage (keyword|semantic|judge|total)
+  logs:
+    include_fields:
+      - trace_id
+      - stage              # keyword|semantic|judge|response_guard
+      - decision           # allow|block|mask|quarantine
+      - reason_code        # from reason_codes above
+      - rule_id            # e.g., R-PI-001 (if applicable)
+      - category           # PromptInjection, PII, etc.
+      - severity
+      - elapsed_ms
+    redact_pii_in_logs: true
+
+# User-facing error templates (no policy internals leaked)
+messages:
+  blocked_generic: "This request can’t be processed due to policy restrictions."
+  blocked_pii: "This request includes sensitive personal data that cannot be processed."
+  blocked_jailbreak: "The request attempts to bypass safety controls and was blocked."
+  blocked_exfil: "The request appears to request secrets or exfiltrate data and was blocked."
+  masked_output: "Certain sensitive details were redacted to protect privacy."
+
+# Optional: allow-list examples (evaluated early, before deny)
+allow_list:
+  enabled: false
+  patterns: []
+
 
