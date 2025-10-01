@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-asg-allow-monitoring-and-ingress
+spec:
+  podSelector:
+    matchLabels: { app: llm-asg, tier: gateway }
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector: {}    # tighten to your ingress controller / ns
+        - podSelector:
+            matchLabels: { app: prometheus }  # allow scraper
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }  # tighten to your model/backends/VPC
+      ports:
+        - protocol: TCP
+          port: 443

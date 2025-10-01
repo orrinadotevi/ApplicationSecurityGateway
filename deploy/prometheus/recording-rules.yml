@@ -1,0 +1,28 @@
+groups:
+- name: llm-asg-recording
+  interval: 30s
+  rules:
+  # Request rates by decision/scenario
+  - record: asg:req_rate:5m
+    expr: sum by (decision, scenario) (rate(asg_requests_total[5m]))
+
+  # Attack block rate and Safe false-positive rate
+  - record: asg:attack_block_rate:5m
+    expr: (sum(rate(asg_requests_total{scenario="attack",decision="block"}[5m])) /
+           sum(rate(asg_requests_total{scenario="attack"}[5m])))
+
+  - record: asg:safe_fpr:5m
+    expr: (sum(rate(asg_requests_total{scenario="safe",decision="block"}[5m])) /
+           sum(rate(asg_requests_total{scenario="safe"}[5m])))
+
+  # Top block reasons (by reason_code)
+  - record: asg:block_reasons:rate:5m
+    expr: sum by (reason_code) (rate(asg_requests_total{decision="block"}[5m]))
+
+  # Policy overhead p95 (total stage)
+  - record: asg:policy_overhead_p95:5m
+    expr: histogram_quantile(0.95, sum by (le) (rate(asg_added_latency_ms_bucket{stage="total"}[5m])))
+
+  # Stage-level overhead p95 (to spot bottlenecks)
+  - record: asg:stage_overhead_p95:5m
+    expr: histogram_quantile(0.95, sum by (stage, le) (rate(asg_added_latency_ms_bucket[5m])))

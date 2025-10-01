@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-asg-policy
+data:
+  policy.yaml: |
+    max_tokens: 800
+    decision_chain:
+      - keyword_filter
+      - semantic_classifier
+      # - llm_judge  # enable in full LLM mode
+    detectors:
+      pii:
+        enabled: true
+        types: [ssn, phone, email, credit_card]
+        redact: true
+        keep_last4: true
+        reason_code: PII_DETECTED
+      jailbreak:
+        enabled: true
+        patterns:
+          - "(?i)ignore (all|any|previous) (instructions|rules)"
+          - "(?i)(jailbreak|do anything now|DAN)"
+        reason_code: PROMPT_INJECTION
+      exfil:
+        enabled: true
+        patterns:
+          - "(?i)(export|leak).*(password|secret|api[-_ ]?key)"
+        reason_code: DATA_EXFIL_PATTERN
+    response_guards:
+      enabled: true
+      recheck_output: true
+      quarantine_on_violation: true
+    rate_limit:
+      enabled: true
+      requests_per_minute: 60
+      burst: 10
+    telemetry:
+      emit_reason_codes: true

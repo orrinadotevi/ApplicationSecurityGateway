@@ -1,0 +1,28 @@
+groups:
+- name: llm-asg-alerts
+  rules:
+  - alert: ASGBlockRateLow
+    expr: |
+      (sum(rate(asg_requests_total{decision="block",scenario="attack"}[5m])) /
+       sum(rate(asg_requests_total{scenario="attack"}[5m]))) < 0.90
+    for: 10m
+    labels: { severity: page }
+    annotations:
+      summary: "ASG attack block rate below 90%"
+      description: "Block rate fell below SLO for 10m."
+  - alert: ASGFalsePositiveHigh
+    expr: |
+      (sum(rate(asg_requests_total{decision="block",scenario="safe"}[5m])) /
+       sum(rate(asg_requests_total{scenario="safe"}[5m]))) > 0.10
+    for: 10m
+    labels: { severity: ticket }
+    annotations:
+      summary: "ASG false-positive rate above 10%"
+      description: "FPR breached SLO for 10m."
+  - alert: ASGLatencyBudgetBreach
+    expr: histogram_quantile(0.95, sum by (le) (rate(asg_added_latency_ms_bucket{stage="total"}[5m]))) > 75
+    for: 10m
+    labels: { severity: ticket }
+    annotations:
+      summary: "ASG policy overhead above 75ms p95"
+      description: "Investigate detectors/decision_chain and model dependencies."

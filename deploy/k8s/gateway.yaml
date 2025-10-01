@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-asg-gateway
+  labels: { app: llm-asg, tier: gateway }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: llm-asg, tier: gateway }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels: { app: llm-asg, tier: gateway }
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/your-org/llm-asg:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: llm-asg-secrets, key: ADMIN_TOKEN } }
+            - name: POLICY_PATH
+              value: /config/policy.yaml
+            - name: LOG_LEVEL
+              value: INFO
+          volumeMounts:
+            - name: policy-config
+              mountPath: /config
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+      volumes:
+        - name: policy-config
+          configMap:
+            name: llm-asg-policy
+            items:
+              - key: policy.yaml
+                path: policy.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-asg-gateway
+  labels: { app: llm-asg, tier: gateway }
+spec:
+  type: ClusterIP
+  selector: { app: llm-asg, tier: gateway }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

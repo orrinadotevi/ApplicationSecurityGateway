@@ -8,6 +8,8 @@ reason_codes:
   PROMPT_INJECTION: "Prompt injection attempt"
   SAFETY_BYPASS: "Attempt to bypass safety/role constraints"
   DATA_EXFIL_PATTERN: "Data exfiltration intent or secret extraction"
+  SECRETS_DETECTED: "Credential/secret pattern detected"
+  SQLI_ATTEMPT: "SQL exfil or credential dump pattern"
   RATE_LIMIT: "Rate limit exceeded"
   UNKNOWN: "Unspecified/other policy violation"
 
@@ -15,25 +17,55 @@ reason_codes:
 detectors:
   pii:
     enabled: true
-    types: [ssn, phone, email, credit_card]
+    types: [ssn, phone, email, credit_card]   # add ip/mac via custom patterns below
     redact: true
     keep_last4: true
     reason_code: PII_DETECTED
+    custom_patterns:
+      # IPv4 with strict octets
+      - id: PII-IPV4
+        description: IPv4 address
+        pattern: '(?i)\b(?:(?:25[0-5]|2[0-4]\d|1?\d{1,2})\.){3}(?:25[0-5]|2[0-4]\d|1?\d{1,2})\b'
+      # MAC address
+      - id: PII-MAC
+        description: MAC address
+        pattern: '(?i)\b(?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2}\b'
+      # Lean SSN with invalid ranges filtered
+      - id: PII-SSN-STRICT
+        description: U.S. SSN strict
+        pattern: '\b(?!000|666|9\d{2})\d{3}[- ]?(?!00)\d{2}[- ]?(?!0000)\d{4}\b'
 
   jailbreak:
     enabled: true
     patterns:
-      - "(?i)ignore (all|any|previous) (instructions|rules)"
-      - "(?i)(jailbreak|do anything now|DAN)"
-      - "(?i)repeat back your system prompt"
+      - '(?i)\b(ignore|disregard|override)\b.*\b(instructions?|rules?|policies|guardrails?)\b'
+      - '(?i)\bdo\s*anything\s*now\b|\bDAN\b|\bjailbreak\b|\bdev\s*mode\b|\buncensored\s*mode\b'
+      - '(?i)\bfrom\s+now\s+on\b.*\b(no|without)\s*(rules|limits|restrictions)\b'
+      - '(?i)\b(role[- ]?play|pretend)\b.*\b(ignore|bypass|no\s*rules)\b'
+      - '(?i)\b(print|show|reveal|expose|leak|repeat)\b.*\b(system\s*prompt|hidden\s*instructions?|developer\s*messages?)\b'
+      - '(?i)\bwhat\s+are\s+your\s+(rules|instructions|guardrails|content\s*policy)\b'
+      - '(?i)\bignore\b.*\bprevious\b.*\bmessage\b'
+      - '(?i)\brespond\s+as\s+an\s+unfiltered\s+model\b'
+      - '(?i)\bthis\s+is\s+for\s+research\b.*\bignore\b.*\bsafety\b'
     reason_code: PROMPT_INJECTION
 
   exfil:
     enabled: true
     patterns:
-      - "(?i)(export|leak).*(password|secret|api[-_ ]?key)"
-      - "(?i)dump .* (database|secrets)"
-    reason_code: DATA_EXFIL_PATTERN
+      - '(?i)\b(export|leak|dump|exfiltrate|retrieve|steal|list|enumerate)\b.*\b(passwords?|secrets?|api[-_ ]?keys?|tokens?|credentials?)\b'
+      - '(?i)\bdump\b.*\b(database|secrets?)\b'
+      - '(?i)\bcat\s+/(?:etc/(?:passwd|shadow))\b'
+      - '(?i)\bSELECT\b.*\bFROM\b.*\b(users?|credentials?|passwords?)\b'
+      # High-signal secret formats (no capture of actual token in logs)
+      - '(?i)\bAKIA[0-9A-Z]{16}\b'                                 # AWS Access Key ID
+      - '(?i)\b(?:ASIA|A3T|AKIA)[0-9A-Z]{16}\b'                    # AWS variants
+      - '(?i)\baws(.{0,20})?(secret|access).{0,20}key\b'           # AWS secret phrases
+      - '(?i)\bghp_[A-Za-z0-9]{36}\b'                              # GitHub PAT
+      - '(?i)\bAIza[0-9A-Za-z\-_]{35}\b'                           # Google API key
+      - '(?i)\bxox[baprs]-[A-Za-z0-9-]{10,48}\b'                   # Slack
+      - '(?i)\bsk_(?:live|test)_[0-9a-zA-Z]{24,}\b'                # Stripe
+      - '(?i)-----BEGIN (?:RSA|EC|OPENSSH|PGP) PRIVATE KEY-----'   # Private key header
+    reason_code: SECRETS_DETECTED
 
 # Your existing keyword rules, now with explicit reason_code
 deny_patterns:
@@ -64,6 +96,72 @@ deny_patterns:
     pattern: "(?i)(jailbreak|do anything now|DAN)"
     severity: 2
     reason_code: SAFETY_BYPASS
+
+    # NEW — prompt-injection/system prompt exfil
+  - id: R-PI-005
+    category: PromptInjection
+    description: Reveal system prompt / hidden instructions
+    pattern: '(?i)\b(print|show|reveal|expose|leak|repeat)\b.*\b(system\s*prompt|hidden\s*instructions?)\b'
+    severity: 4
+    reason_code: PROMPT_INJECTION
+
+  - id: R-PI-006
+    category: PromptInjection
+    description: Roleplay to bypass safety
+    pattern: '(?i)\b(role[- ]?play|pretend)\b.*\b(no\s*rules|ignore|bypass)\b'
+    severity: 3
+    reason_code: SAFETY_BYPASS
+
+  # NEW — secrets & credentials
+  - id: R-SCRT-001
+    category: Secrets
+    description: AWS Access Key ID format
+    pattern: '(?i)\b(?:ASIA|AKIA|A3T)[0-9A-Z]{16}\b'
+    severity: 5
+    reason_code: SECRETS_DETECTED
+
+  - id: R-SCRT-002
+    category: Secrets
+    description: GitHub token format
+    pattern: '(?i)\bghp_[A-Za-z0-9]{36}\b'
+    severity: 5
+    reason_code: SECRETS_DETECTED
+
+  - id: R-SCRT-003
+    category: Secrets
+    description: Google API key format
+    pattern: '(?i)\bAIza[0-9A-Za-z\-_]{35}\b'
+    severity: 5
+    reason_code: SECRETS_DETECTED
+
+  - id: R-SCRT-004
+    category: Secrets
+    description: Stripe secret key
+    pattern: '(?i)\bsk_(?:live|test)_[0-9a-zA-Z]{24,}\b'
+    severity: 5
+    reason_code: SECRETS_DETECTED
+
+  - id: R-SCRT-005
+    category: Secrets
+    description: Private key material
+    pattern: '(?i)-----BEGIN (?:RSA|EC|OPENSSH|PGP) PRIVATE KEY-----'
+    severity: 5
+    reason_code: SECRETS_DETECTED
+
+  # NEW — SQL credential/exfil attempts (cheap keyword guard)
+  - id: R-SQL-001
+    category: DataExfiltration
+    description: SQL dump of user tables
+    pattern: '(?i)\bSELECT\b.*\bFROM\b.*\b(users?|credentials?|passwords?)\b'
+    severity: 4
+    reason_code: SQLI_ATTEMPT
+
+  - id: R-OS-001
+    category: DataExfiltration
+    description: OS file exfil (passwd/shadow)
+    pattern: '(?i)\bcat\s+/(?:etc/(?:passwd|shadow))\b'
+    severity: 4
+    reason_code: DATA_EXFIL_PATTERN
 
 # Multi-stage evaluation chain (defense-in-depth)
 decision_chain:

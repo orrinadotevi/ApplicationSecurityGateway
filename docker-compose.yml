@@ -32,7 +32,7 @@ services:
       - POLICY_PATH=/app/configs/policy.yaml
       - LOG_DIR=/app/logs
       - STATIC_DIR=/app/static
-      - ADMIN_TOKEN=changeme123
+      - ADMIN_TOKEN=Africangoku23!
       - MAX_REQUEST_BYTES=32768
       - COUNT_ALL_MATCHES=true
       - JSON_LOGS=true

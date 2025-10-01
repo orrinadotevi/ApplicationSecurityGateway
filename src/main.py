@@ -101,7 +101,7 @@ def log_event(event: dict):
 # Security: Admin bearer + IP allow-list
 # -----------------------------------------------------------------------------
 security = HTTPBearer(auto_error=False)
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "changeme123")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "Africangoku23!")
 ALLOW_INSECURE_ADMIN = (
     os.getenv("ALLOW_INSECURE_ADMIN", "false").lower() in ("1","true","yes","on")
     or bool(os.environ.get("PYTEST_CURRENT_TEST"))
