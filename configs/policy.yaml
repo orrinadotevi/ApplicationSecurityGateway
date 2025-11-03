@@ -1,5 +1,13 @@
 # ===== LLM-ASG Policy (Step 7) =====
-max_tokens: 800
+max_tokens: 2048
+
+# --- NEW: normalize inputs before matching (defeats spacing/punctuation tricks)
+normalization:
+  lower: true
+  unicode_nfkc: true
+  collapse_whitespace: true      # turn tabs/newlines/multiple spaces into single spaces
+  strip_punctuation_runs: true   # collapse long punctuation runs (e.g., i.n.s.t.r.u.c.t.i.o.n.s)
+  max_input_chars: 12000         # cut pathological payloads early
 
 # Canonical reason codes used in logs/metrics/UI
 reason_codes:
@@ -17,20 +25,17 @@ reason_codes:
 detectors:
   pii:
     enabled: true
-    types: [ssn, phone, email, credit_card]   # add ip/mac via custom patterns below
+    types: [ssn, phone, email, credit_card]
     redact: true
     keep_last4: true
     reason_code: PII_DETECTED
     custom_patterns:
-      # IPv4 with strict octets
       - id: PII-IPV4
         description: IPv4 address
         pattern: '(?i)\b(?:(?:25[0-5]|2[0-4]\d|1?\d{1,2})\.){3}(?:25[0-5]|2[0-4]\d|1?\d{1,2})\b'
-      # MAC address
       - id: PII-MAC
         description: MAC address
         pattern: '(?i)\b(?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2}\b'
-      # Lean SSN with invalid ranges filtered
       - id: PII-SSN-STRICT
         description: U.S. SSN strict
         pattern: '\b(?!000|666|9\d{2})\d{3}[- ]?(?!00)\d{2}[- ]?(?!0000)\d{4}\b'
@@ -38,81 +43,97 @@ detectors:
   jailbreak:
     enabled: true
     patterns:
-      - '(?i)\b(ignore|disregard|override)\b.*\b(instructions?|rules?|policies|guardrails?)\b'
-      - '(?i)\bdo\s*anything\s*now\b|\bDAN\b|\bjailbreak\b|\bdev\s*mode\b|\buncensored\s*mode\b'
-      - '(?i)\bfrom\s+now\s+on\b.*\b(no|without)\s*(rules|limits|restrictions)\b'
-      - '(?i)\b(role[- ]?play|pretend)\b.*\b(ignore|bypass|no\s*rules)\b'
-      - '(?i)\b(print|show|reveal|expose|leak|repeat)\b.*\b(system\s*prompt|hidden\s*instructions?|developer\s*messages?)\b'
-      - '(?i)\bwhat\s+are\s+your\s+(rules|instructions|guardrails|content\s*policy)\b'
-      - '(?i)\bignore\b.*\bprevious\b.*\bmessage\b'
-      - '(?i)\brespond\s+as\s+an\s+unfiltered\s+model\b'
-      - '(?i)\bthis\s+is\s+for\s+research\b.*\bignore\b.*\bsafety\b'
+      # ignore/override previous instructions/rules/guardrails
+      - '(?is)\b(ignore|disregard|override|forget)\b.{0,40}\b(prev(ious)?|above|earlier)\b.{0,40}\b(instructions?|rules?|polic(y|ies)|guardrails?)\b'
+      - '(?is)\bfrom\s+now\s+on\b.{0,50}\b(no|without)\b.{0,10}\b(rules?|limits?|restrictions?)\b'
+      # roleplay/pretend to bypass
+      - '(?is)\b(role[- ]?play|pretend|act\s+as)\b.{0,80}\b(ignore|bypass|no\s*rules|unfiltered|uncensored)\b'
+      # jailbreak memes
+      - '(?is)\b(do\s*anything\s*now|DAN|jailbreak|dev\s*mode|uncensored\s*mode)\b'
+      # solicit system prompt/hidden instructions
+      - '(?is)\b(print|show|reveal|expose|leak|repeat|dump|display)\b.{0,80}\b(system\s*prompt|hidden\s*instructions?|developer\s*messages?|internal\s*guidelines?)\b'
+      # “answer as an unrestricted model / disable safety”
+      - '(?is)\b(answer|respond)\b.{0,40}\b(as|like)\b.{0,40}\b(unrestricted|unfiltered|no\s*policy|no\s*safety)\b'
+      # “ignore this message only” tricks
+      - '(?is)\bignore\b.{0,40}\b(previous|prior|earlier)\b.{0,40}\b(message|context)\b'
+      # research justification to bypass
+      - '(?is)\bthis\s+is\s+for\s+research|academic\s+purposes\b.{0,40}\bignore\b.{0,20}\bsafety\b'
     reason_code: PROMPT_INJECTION
 
   exfil:
     enabled: true
     patterns:
-      - '(?i)\b(export|leak|dump|exfiltrate|retrieve|steal|list|enumerate)\b.*\b(passwords?|secrets?|api[-_ ]?keys?|tokens?|credentials?)\b'
-      - '(?i)\bdump\b.*\b(database|secrets?)\b'
-      - '(?i)\bcat\s+/(?:etc/(?:passwd|shadow))\b'
-      - '(?i)\bSELECT\b.*\bFROM\b.*\b(users?|credentials?|passwords?)\b'
-      # High-signal secret formats (no capture of actual token in logs)
-      - '(?i)\bAKIA[0-9A-Z]{16}\b'                                 # AWS Access Key ID
-      - '(?i)\b(?:ASIA|A3T|AKIA)[0-9A-Z]{16}\b'                    # AWS variants
-      - '(?i)\baws(.{0,20})?(secret|access).{0,20}key\b'           # AWS secret phrases
-      - '(?i)\bghp_[A-Za-z0-9]{36}\b'                              # GitHub PAT
-      - '(?i)\bAIza[0-9A-Za-z\-_]{35}\b'                           # Google API key
-      - '(?i)\bxox[baprs]-[A-Za-z0-9-]{10,48}\b'                   # Slack
-      - '(?i)\bsk_(?:live|test)_[0-9a-zA-Z]{24,}\b'                # Stripe
-      - '(?i)-----BEGIN (?:RSA|EC|OPENSSH|PGP) PRIVATE KEY-----'   # Private key header
+      # generic exfil synonyms
+      - '(?is)\b(export|leak|dump|exfiltrate|extract|retrieve|steal|enumerate|list|expose)\b.{0,80}\b(passwords?|secrets?|api[-_ ]?keys?|tokens?|credentials?)\b'
+      # SQL dump / credential tables (support backticks/quotes)
+      - '(?is)\bselect\b.{0,120}\bfrom\b.{0,120}\b(`?users?`?|`?credentials?`?|`?passwords?`?)\b'
+      - '(?is)\b(information_schema|sqlite_master|mysql\.user)\b'
+      # Unix credential files
+      - '(?is)\bcat\b.{0,20}/etc/(?:passwd|shadow)\b'
+      # Windows credential artifacts
+      - '(?is)\b(type|copy)\b.{0,40}\bC:\\\\Windows\\\\System32\\\\config\\\\SAM\b'
+      - '(?is)\breg\s+save\b.{0,80}\bSAM\b'
+      - '(?is)\bAppData\\\Roaming\\\Mozilla\\\Firefox\\\Profiles\b'
+      # SSH keys / private materials
+      - '(?is)\b(id_rsa|id_ecdsa|known_hosts)\b'
+      # High-signal token formats
+      - '(?i)\b(?:ASIA|AKIA|A3T)[0-9A-Z]{16}\b'           # AWS Access Key ID
+      - '(?i)\baws(.{0,20})?(secret|access).{0,20}key\b' # AWS “secret/access key” phrase
+      - '(?i)\bghp_[A-Za-z0-9]{36}\b'                    # GitHub PAT
+      - '(?i)\bAIza[0-9A-Za-z\-_]{35}\b'                 # Google API key
+      - '(?i)\bxox[baprs]-[A-Za-z0-9-]{10,48}\b'         # Slack token
+      - '(?i)\bsk_(?:live|test)_[0-9a-zA-Z]{24,}\b'      # Stripe
+      - '(?i)\bsk_[0-9a-zA-Z]{20,}\b'                    # generic sk_ tokens
+      - '(?i)-----BEGIN (?:RSA|EC|OPENSSH|PGP) PRIVATE KEY-----'
     reason_code: SECRETS_DETECTED
 
 # Your existing keyword rules, now with explicit reason_code
 deny_patterns:
+  # Prompt injection & jailbreak
   - id: R-PI-001
     category: PromptInjection
-    description: Prompt injection — "ignore previous instructions"
-    pattern: "(?i)ignore (all|any|previous) (instructions|rules)"
-    severity: 3
-    reason_code: PROMPT_INJECTION
-
-  - id: R-PI-002
-    category: DataExfiltration
-    description: Attempts to exfiltrate credentials or secrets
-    pattern: "(?i)(export|leak).*(password|secret|api[-_ ]?key)"
+    description: Ignore/override previous instructions or rules
+    pattern: '(?is)\b(ignore|disregard|override|forget)\b.{0,40}\b(prev(ious)?|above|earlier)\b.{0,40}\b(instructions?|rules?|polic(y|ies)|guardrails?)\b'
     severity: 4
-    reason_code: DATA_EXFIL_PATTERN
-
-  - id: R-PI-003
-    category: PII
-    description: Asks for social security numbers
-    pattern: "(?i)(ssn|social security number)"
-    severity: 5
-    reason_code: PII_DETECTED
+    reason_code: PROMPT_INJECTION
 
   - id: R-PI-004
     category: SafetyBypass
-    description: Jailbreak phrases
-    pattern: "(?i)(jailbreak|do anything now|DAN)"
-    severity: 2
+    description: Jailbreak memes and “do anything now”
+    pattern: '(?is)\b(do\s*anything\s*now|DAN|jailbreak|dev\s*mode|uncensored\s*mode)\b'
+    severity: 3
     reason_code: SAFETY_BYPASS
 
-    # NEW — prompt-injection/system prompt exfil
   - id: R-PI-005
     category: PromptInjection
     description: Reveal system prompt / hidden instructions
-    pattern: '(?i)\b(print|show|reveal|expose|leak|repeat)\b.*\b(system\s*prompt|hidden\s*instructions?)\b'
+    pattern: '(?is)\b(print|show|reveal|expose|leak|repeat|dump|display)\b.{0,80}\b(system\s*prompt|hidden\s*instructions?|developer\s*messages?|internal\s*guidelines?)\b'
     severity: 4
     reason_code: PROMPT_INJECTION
 
   - id: R-PI-006
     category: PromptInjection
-    description: Roleplay to bypass safety
-    pattern: '(?i)\b(role[- ]?play|pretend)\b.*\b(no\s*rules|ignore|bypass)\b'
-    severity: 3
+    description: Roleplay/pretend to bypass safety or “answer as an unfiltered model”
+    pattern: '(?is)\b(role[- ]?play|pretend|act\s+as)\b.{0,80}\b(ignore|bypass|no\s*rules|unfiltered|uncensored|no\s*safety)\b'
+    severity: 4
     reason_code: SAFETY_BYPASS
 
-  # NEW — secrets & credentials
+  # PII request
+  - id: R-PI-003
+    category: PII
+    description: Asks for social security numbers
+    pattern: '(?is)\b(ssn|social\s*security\s*number(s)?)\b'
+    severity: 5
+    reason_code: PII_DETECTED
+
+  # Secrets & exfil attempts
+  - id: R-PI-002
+    category: DataExfiltration
+    description: Attempts to exfiltrate credentials or secrets
+    pattern: '(?is)\b(export|leak|dump|exfiltrate|extract|retrieve|steal|enumerate|list|expose)\b.{0,80}\b(passwords?|secrets?|api[-_ ]?keys?|tokens?|credentials?)\b'
+    severity: 5
+    reason_code: DATA_EXFIL_PATTERN
+
   - id: R-SCRT-001
     category: Secrets
     description: AWS Access Key ID format
@@ -143,23 +164,22 @@ deny_patterns:
 
   - id: R-SCRT-005
     category: Secrets
-    description: Private key material
+    description: Private key material header
     pattern: '(?i)-----BEGIN (?:RSA|EC|OPENSSH|PGP) PRIVATE KEY-----'
     severity: 5
     reason_code: SECRETS_DETECTED
 
-  # NEW — SQL credential/exfil attempts (cheap keyword guard)
   - id: R-SQL-001
     category: DataExfiltration
-    description: SQL dump of user tables
-    pattern: '(?i)\bSELECT\b.*\bFROM\b.*\b(users?|credentials?|passwords?)\b'
+    description: SQL dump of user/credential tables
+    pattern: '(?is)\bselect\b.{0,120}\bfrom\b.{0,120}\b(`?users?`?|`?credentials?`?|`?passwords?`?)\b'
     severity: 4
     reason_code: SQLI_ATTEMPT
 
   - id: R-OS-001
     category: DataExfiltration
-    description: OS file exfil (passwd/shadow)
-    pattern: '(?i)\bcat\s+/(?:etc/(?:passwd|shadow))\b'
+    description: OS credential file exfil (Unix/Windows)
+    pattern: '(?is)\b(cat\b.{0,20}/etc/(?:passwd|shadow)|\b(type|copy)\b.{0,40}C:\\\\Windows\\\\System32\\\\config\\\\SAM|\breg\s+save\b.{0,80}\bSAM\b)\b'
     severity: 4
     reason_code: DATA_EXFIL_PATTERN
 

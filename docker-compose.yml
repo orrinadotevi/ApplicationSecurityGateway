@@ -17,7 +17,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gateway
-    image: llm-asg-gateway:step7
+    image: llm-asg-gateway:dev
     depends_on:
       - mock-llm
       - ollama

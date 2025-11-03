@@ -10,7 +10,7 @@ LLM-ASG Gateway (Step 5) — Hardening & Performance
 - JSON logs option
 """
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -20,7 +20,7 @@ from logging.handlers import RotatingFileHandler
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Tuple
 from pathlib import Path
-from src.redaction import redact_text, REDACT_UPSTREAM  # Step 3 redaction
+from src.redaction import redact_text, REDACT_UPSTREAM
 from collections import deque
 from time import monotonic
 
@@ -36,6 +36,22 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins="http://localhost:5173",       # or ["*"] for local dev only
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["Retry-After","X-Policy-Version"],
+    max_age=600,
+)
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 # --- Basic security headers ---
 @app.middleware("http")
@@ -191,7 +207,7 @@ async def _call_llm(text: str, request_id: str):
             "model": OPENAI_MODEL,
             "messages": [{"role": "user", "content": text}],
             "temperature": OPENAI_TEMPERATURE,
-            "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "512")),
+            "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "1024")),
         }
         base = OPENAI_BASE_URL.rstrip("/")
         url = f"{base}/v1/chat/completions"
@@ -876,12 +892,3 @@ async def debug_config():
 async def debug_bodylen(request: Request):
     raw = await request.body()
     return {"path": request.url.path, "bytes": len(raw), "max": MAX_REQUEST_BYTES}
-
-
-
-
-
-
-
-
-

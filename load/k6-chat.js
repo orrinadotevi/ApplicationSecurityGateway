@@ -128,7 +128,7 @@ function baseHeaders() {
   return { 'Content-Type': 'application/json', 'X-ASG-Job': JOB };
 }
 function candidateHeaders() {
-  const admin = __ENV.ADMIN_TOKEN || 'changeme123';
+  const admin = __ENV.ADMIN_TOKEN || 'Africangoku23!';
   const user  = __ENV.USER_TOKEN || admin;
   const api   = __ENV.X_API_KEY   || admin;
 

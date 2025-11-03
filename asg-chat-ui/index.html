@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ASG Chat · LM Studio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{
+      --bg:#0b0b10;
+      --panel:#0f1117;
+      --muted:#1a1d25;
+      --card:rgba(255,255,255,0.04);
+      --border:rgba(255,255,255,0.08);
+      --ring:#60a5fa;
+    }
+    /* App background & typography */
+    body{ background: radial-gradient(1200px 800px at 20% -10%, #0d1320 0%, #0b0b10 45%) no-repeat, var(--bg); }
+    .brand-gradient{ background: linear-gradient(90deg,#8ab4ff,#60a5fa,#34d399); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .card{ background:var(--card); border:1px solid var(--border); border-radius:16px; backdrop-filter:saturate(140%) blur(8px); }
+    .tile{ background:linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03)); border:1px solid var(--border); border-radius:14px; }
+    .pill{ border-radius:9999px; padding:.35rem .7rem; font-size:.75rem; border:1px solid var(--border); background:#0e1726; }
+    .msg{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; line-height:1.55; }
+    .shadow-soft{ box-shadow:0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.04); }
+    .scroll-soft{ scrollbar-width:thin; scrollbar-color:#3f3f46 transparent; }
+    .scroll-soft::-webkit-scrollbar{ height:10px; width:10px }
+    .scroll-soft::-webkit-scrollbar-thumb{ background:#3f3f46; border-radius:999px }
+    .scroll-soft::-webkit-scrollbar-track{ background:transparent }
+    /* Buttons */
+    .btn{ display:inline-flex; align-items:center; gap:.5rem; padding:.6rem .9rem; border-radius:.8rem; border:1px solid var(--border); background:#0e1320 }
+    .btn:hover{ background:#11182a }
+    .btn-primary{ background:#2563eb; border-color:rgba(255,255,255,.08) }
+    .btn-primary:hover{ background:#1d4ed8 }
+    /* Inputs */
+    .input{ background:#0e1320; border:1px solid var(--border); border-radius:14px; color:#e5e7eb }
+    .input:focus{ outline:none; box-shadow:0 0 0 2px var(--ring) }
+    /* Chat bubbles */
+    .bubble{ border-radius:1rem; padding:.9rem 1rem }
+    .bubble-user{ background:linear-gradient(180deg,#2563eb,#1d4ed8); color:#e6f0ff }
+    .bubble-ai{ background:#0e1422; border:1px solid var(--border) }
+    /* Tiny progress bars under stat tiles */
+    .bar{ height:6px; border-radius:9999px; background:#1f2937; overflow:hidden }
+    .bar>span{ display:block; height:100%; border-radius:9999px; background:linear-gradient(90deg,#10b981,#34d399) }
+    .bar-rose>span{ background:linear-gradient(90deg,#fb7185,#ef4444) }
+    /* Typing dots (optional) */
+    .typing{ display:inline-flex; gap:6px; align-items:center }
+    .dot{ width:6px; height:6px; border-radius:9999px; background:#cbd5e1; opacity:.4; animation:blip 1.4s infinite ease-in-out }
+    .dot:nth-child(2){ animation-delay:.2s } .dot:nth-child(3){ animation-delay:.4s }
+    @keyframes blip{ 0%,80%,100%{opacity:.25; transform:translateY(0)} 40%{opacity:.9; transform:translateY(-2px)} }
+    /* Subtle card hover */
+    .lift{ transition:transform .2s ease, box-shadow .2s ease }
+    .lift:hover{ transform:translateY(-2px) }
+    /* Smooth section fade-in */
+    .fade-in{ animation:fade .4s ease both }
+    @keyframes fade{ from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:translateY(0)} }
+  </style>
+</head>
+<body class="text-zinc-200">
+  <div class="max-w-7xl mx-auto px-4 lg:px-6 py-6">
+    <!-- Header -->
+    <header class="mb-6 lg:mb-8">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h1 class="text-3xl md:text-4xl font-semibold tracking-tight brand-gradient">ASG · Chat Console</h1>
+          <p class="text-zinc-400 mt-2">Prompt your model through the Application Security Gateway (ASG) with LM Studio fallback.<br class="hidden sm:block" /> Live policy stats on the right.</p>
+        </div>
+        <div class="hidden sm:flex items-center gap-2">
+          <span class="pill text-emerald-300/90">Online</span>
+          <span id="backendTag" class="pill text-blue-300/90">Gateway</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Chat column (2/3) -->
+      <section class="lg:col-span-2 card shadow-soft lift fade-in">
+        <!-- Toolbar -->
+        <div class="flex items-center justify-between gap-3 px-4 pt-4 pb-3 border-b border-white/10">
+          <div class="flex items-center gap-2 sm:hidden">
+            <span class="pill text-emerald-300/90">Online</span>
+            <span id="backendTag" class="pill text-blue-300/90">Gateway</span>
+          </div>
+          <div class="flex-1"></div>
+          <div class="flex items-center gap-4 text-sm">
+            <label for="firewallToggle" class="flex items-center gap-2 cursor-pointer select-none">
+              <input id="firewallToggle" type="checkbox" class="h-4 w-4 accent-blue-500" checked />
+              <span class="text-zinc-300">Firewall Enabled</span>
+            </label>
+            <button id="clearBtn" class="btn" title="Clear conversation">
+              <svg width="16" height="16" viewBox="0 0 24 24" class="opacity-80"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM6 10h2v7H6v-7Zm-2 9h16v2H4v-2Z"/></svg>
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat stream -->
+        <div id="chat" class="h-[68vh] sm:h-[70vh] overflow-auto scroll-soft px-3 sm:px-4 py-4 space-y-3">
+          <!-- Sample first-time hint (remove if you don’t want it) -->
+          <div class="flex justify-start">
+            <div class="bubble bubble-ai msg text-zinc-200 max-w-[85%]">
+  Welcome! Ask a question or paste content. Attach files to inline them in your prompt.
+            </div>
+          </div>
+        </div>
+
+        <!-- Composer (sticky inside the card) -->
+        <div class="sticky bottom-0 left-0 right-0 border-t border-white/10 bg-[rgba(8,10,16,.55)] backdrop-blur px-3 sm:px-4 py-3">
+          <form id="composer" class="flex flex-col gap-3">
+            <div class="flex items-center gap-3 flex-wrap">
+              <label class="btn cursor-pointer" aria-label="Choose files">
+                <input id="fileInput" type="file" class="hidden" multiple
+                  accept=".txt,.md,.json,.log,.csv,.tsv,.xml,.yaml,.yml,.ini,.conf,.py,.js,.ts,.html,.css,.sql, text/*, application/json, application/xml" />
+                <svg width="16" height="16" viewBox="0 0 24 24" class="opacity-80"><path fill="currentColor" d="M7 18q-1.65 0-2.825-1.175T3 14q0-1.575 1.063-2.75T6.7 10.05q.5-2.325 2.35-3.887T13 4q3.05 0 5.025 2.113T20 11q1.65.175 2.825 1.438T24 15q0 1.65-1.175 2.825T20 19H7Zm3-3l4-4l-1.4-1.4L10 12.2L8.4 10.6L7 12l3 3Z"/></svg>
+                Choose Files
+              </label>
+              <div class="text-xs text-zinc-400" id="fileHint">Attachments are inlined (text/JSON/MD). Non-text files are ignored.</div>
+            </div>
+
+            <div class="flex gap-2 items-end">
+              <textarea id="prompt" rows="2" placeholder="Type your prompt…"
+                class="input flex-1 p-3 min-h-[48px] max-h-[200px] resize-none"
+                oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+              <button class="btn btn-primary shadow-soft" aria-label="Send">
+                <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M2 21V3l21 9l-21 9Zm3-4.5L16.85 12L5 6.5v3.65L12.05 12L5 13.85Z"/></svg>
+                <span class="hidden sm:block">Send</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Stats column (1/3) -->
+      <aside class="card shadow-soft lift p-4 fade-in">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold tracking-tight">Live Stats</h2>
+          <button id="refreshBtn" class="btn" title="Refresh stats">
+            <svg width="16" height="16" viewBox="0 0 24 24" class="opacity-80"><path fill="currentColor" d="M12 6V3l4 4l-4 4V8a4 4 0 1 0 4 4h2a6 6 0 1 1-6-6"/></svg>
+            Refresh
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="tile p-3">
+            <div class="text-xs text-zinc-400">Total Requests</div>
+            <div id="statTotal" class="text-2xl font-bold mt-1">0</div>
+            <div class="bar mt-2"><span style="width: 0%"></span></div>
+          </div>
+          <div class="tile p-3">
+            <div class="text-xs text-zinc-400">Allow Rate</div>
+            <div id="statAllowRate" class="text-2xl font-bold text-emerald-400 mt-1">0%</div>
+            <div class="bar mt-2"><span id="barAllow" style="width: 0%"></span></div>
+          </div>
+          <div class="tile p-3">
+            <div class="text-xs text-zinc-400">Block Rate</div>
+            <div id="statBlockRate" class="text-2xl font-bold text-rose-400 mt-1">0%</div>
+            <div class="bar bar-rose mt-2"><span id="barBlock" style="width: 0%"></span></div>
+          </div>
+          <div class="tile p-3">
+            <div class="text-xs text-zinc-400">Added Latency (last)</div>
+            <div id="statLatency" class="text-2xl font-bold mt-1">—</div>
+          </div>
+        </div>
+
+        <div class="mt-5">
+          <h3 class="text-sm font-semibold mb-2">Top Block Reasons</h3>
+          <div id="reasons" class="space-y-2">
+            <div class="text-xs text-zinc-500">No data yet.</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+  // ======== Config ========
+  const GATEWAY_BASE   = "http://localhost:8000";
+  const GATEWAY_CHAT   = "/chat";
+  const GATEWAY_METRICS= "/metrics";
+
+  const LMSTUDIO_BASE  = "http://localhost:1234/v1";
+  const LMSTUDIO_MODEL = "lmstudio-community/openai/gpt-oss-20b";
+  const ADMIN_TOKEN    = "Africangoku23!";
+
+  // ======== State ========
+  let useGateway = true;
+  let lastAddedLatency = null;
+
+  // ======== DOM ========
+  const chatEl       = document.getElementById("chat");
+  const promptEl     = document.getElementById("prompt");
+  const fileEl       = document.getElementById("fileInput");
+  const fwToggle     = document.getElementById("firewallToggle");
+  const backendTag   = document.getElementById("backendTag");
+
+  const statTotal    = document.getElementById("statTotal");
+  const statAllowRate= document.getElementById("statAllowRate");
+  const statBlockRate= document.getElementById("statBlockRate");
+  const statLatency  = document.getElementById("statLatency");
+  const reasonsEl    = document.getElementById("reasons");
+
+  // ======== UI helpers ========
+  function addMsg(role, text) {
+    const wrap = document.createElement("div");
+    wrap.className = "flex " + (role === "user" ? "justify-end" : "justify-start");
+    const bubble = document.createElement("div");
+    bubble.className =
+      "max-w-[80%] rounded-2xl px-4 py-3 msg " +
+      (role === "user" ? "bg-blue-600" : "bg-zinc-800");
+
+    // prevent cut-offs for long content
+    bubble.style.overflowWrap = "anywhere";
+    bubble.style.wordBreak   = "break-word";
+    bubble.style.maxHeight   = "";
+    bubble.style.overflow    = "visible";
+
+    if (role === "user") {
+      bubble.textContent = text; // user stays plain text
+    } else {
+      bubble.innerHTML = renderMarkdownLite(text); // assistant allows safe markdown
+    }
+
+    wrap.appendChild(bubble);
+    chatEl.appendChild(wrap);
+
+    // Only clamp assistant messages
+    if (role !== "user") maybeClampBubble(bubble);
+
+    // auto-scroll to newest message
+    queueMicrotask(() => { chatEl.scrollTop = chatEl.scrollHeight; });
+  }
+
+  function maybeClampBubble(bubble) {
+    const MAX_CHARS = 4000; // adjust if you want
+    if (bubble.textContent.length <= MAX_CHARS) return;
+    const full = bubble.innerHTML;
+    const short = escapeHtml(bubble.textContent.slice(0, MAX_CHARS)) + "…";
+    bubble.innerHTML = `${short}<br><button class="mt-2 text-xs underline" data-expand="1">Show more</button>`;
+    bubble.addEventListener("click", (e) => {
+      if (e.target?.dataset?.expand) {
+        bubble.innerHTML = full;
+      }
+    }, { once: true });
+  }
+
+  function updateLastAssistant(text) {
+    const last = chatEl.lastChild?.querySelector?.(".msg");
+    if (last) last.innerHTML = renderMarkdownLite(text);
+    requestAnimationFrame(() => { chatEl.scrollTop = chatEl.scrollHeight; });
+  }
+
+  function setBackendTag() {
+    backendTag.textContent = useGateway ? "Gateway" : "LM Studio";
+    backendTag.className =
+      "pill " + (useGateway ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700");
+  }
+
+  // ======== Safe Markdown (lite) ========
+  function escapeHtml(s) {
+    return s
+      .replaceAll(/&/g, "&amp;")
+      .replaceAll(/</g, "&lt;")
+      .replaceAll(/>/g, "&gt;")
+      .replaceAll(/"/g, "&quot;")
+      .replaceAll(/'/g, "&#39;");
+  }
+
+  function renderMarkdownLite(input) {
+    if (typeof input !== "string") return "";
+    let s = sanitizeContent(input);
+
+    // Escape HTML first
+    s = escapeHtml(s);
+
+    // Fenced code blocks ```lang\n...\n```
+    s = s.replace(/```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g, (_, lang, code) =>
+      `<pre class="rounded-lg p-3 bg-zinc-900 border border-zinc-700 overflow-auto"><code>${escapeHtml(code.replace(/\n$/,''))}</code></pre>`
+    );
+
+    // Inline code `...`
+    s = s.replace(/`([^`]+)`/g, (_, code) => `<code class="px-1 rounded bg-zinc-900 border border-zinc-700">${escapeHtml(code)}</code>`);
+
+    // **bold** and *italics*
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+    // URLs -> links
+    s = s.replace(
+      /\bhttps?:\/\/[^\s<)]+/g,
+      (url) => `<a href="${url}" target="_blank" rel="noopener" class="underline decoration-dotted">${url}</a>`
+    );
+
+    // Newlines -> <br>
+    s = s.replace(/\n/g, "<br>");
+
+    return s;
+  }
+
+  function sanitizeContent(s) {
+    if (typeof s !== "string") return s;
+    s = s
+      .replace(/^\s*(<\|\s*assistant\s*\|>|\[assistant\]|assistant:)\s*/i, "")
+      .replace(/^\s*(final\s*answer|assistant\s*response)\s*:\s*/i, "");
+    // Remove fenced JSON blocks with usage/model metadata
+    s = s.replace(/```json[\s\S]*?(\"model\"|\"usage\"|\"prompt_tokens\"|\"system_fingerprint\")[\s\S]*?```/gi, "");
+    // If entire payload was fenced, unwrap once
+    if (/^\s*```[\s\S]*```/.test(s)) {
+      s = s.replace(/^\s*```[a-zA-Z0-9_-]*\s*/, "").replace(/\s*```\s*$/, "");
+    }
+    // Strip LMStudio noise lines
+    s = stripLmStudioNoise(s);
+    // Collapse >3 blank lines
+    s = s.replace(/\n{3,}/g, "\n\n");
+    return s.trim();
+  }
+
+  function stripLmStudioNoise(text) {
+    const lines = String(text).split(/\r?\n/);
+    const keep = [];
+    const noise = /^(model|provider|endpoint|request id|temperature|top[_-]?p|seed|max[_-]?tokens|stop|stream|n|frequency[_-]?penalty|presence[_-]?penalty|response[_-]?format|tools?|tool[_-]?choice|logprobs?|echo|metadata|usage|prompt|system|user|assistant|duration|time|tps|throughput|cache|device|engine|sampler)\s*[:=]/i;
+    for (let ln of lines) {
+      ln = ln.replace(/^\s*(?:[-*•▶️]|INFO|DEBUG|TRACE)\s*[:\-]?\s*/i, "");
+      if (noise.test(ln)) continue;
+      if (/^\s*[\[\]\{\}]+\s*$/.test(ln)) continue;
+      if (/^\s*\"(model|usage|created|id)\"\s*:/.test(ln)) continue;
+      keep.push(ln);
+    }
+    return keep.join("\n");
+  }
+
+  // ======== File attachments (text only) ========
+  const INLINE_EXT = /\.(txt|md|csv|tsv|json|xml|ya?ml|log|ini|conf|py|js|ts|html|css|sql)$/i;
+  const MAX_INLINE_BYTES = 1024 * 1024; // 1 MB
+  let filePreviewSpan = null;
+
+  function ensureFilePreviewSpan() {
+    if (!filePreviewSpan) {
+      filePreviewSpan = document.createElement("span");
+      filePreviewSpan.className = "text-xs text-zinc-400";
+      fileEl.insertAdjacentElement("afterend", filePreviewSpan);
+    }
+  }
+  function renderFilePreview() {
+    ensureFilePreviewSpan();
+    if (!fileEl.files?.length) { filePreviewSpan.textContent = ""; return; }
+    const names = Array.from(fileEl.files).map(f => f.name);
+    filePreviewSpan.textContent = `  (${names.length} file${names.length>1?"s":""} selected: ${names.slice(0,3).join(", ")}${names.length>3?"…":""})`;
+  }
+  fileEl.addEventListener("change", renderFilePreview);
+
+  async function inlineAttachments() {
+    if (!fileEl.files?.length) return "";
+    const parts = [];
+    for (const f of fileEl.files) {
+      const isTextLike = f.type.startsWith("text/") || INLINE_EXT.test(f.name);
+      if (!isTextLike) {
+        parts.push(`\n\n[Attachment: ${f.name}] (not inlined)`);
+        continue;
+      }
+      if (f.size > MAX_INLINE_BYTES) {
+        parts.push(`\n\n[Attachment: ${f.name}] (skipped: > ${MAX_INLINE_BYTES} bytes)`);
+        continue;
+      }
+      try {
+        const txt = await f.text();
+        parts.push(`\n\n[Attachment: ${f.name}]\n${txt}`);
+      } catch {
+        parts.push(`\n\n[Attachment: ${f.name}] (failed to read)`);
+      }
+    }
+    return parts.join("\n");
+  }
+  function clearAttachmentsUI() { fileEl.value = ""; renderFilePreview(); }
+
+  // ======== JSON helpers ========
+  async function fetchJSON(res) {
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) return res.json();
+    const t = await res.text();
+    try { return JSON.parse(t); } catch { return { _raw: t }; }
+  }
+
+  function firstString(...vals) {
+    for (const v of vals) if (typeof v === "string" && v.trim()) return v;
+    return undefined;
+  }
+
+  // Robust extraction: handles objects AND raw-string blobs with metadata
+  function extractText(any) {
+    if (any && typeof any === "object") {
+      let s =
+        firstString(
+          any?.output?.text,
+          any?.response?.text,
+          any?.answer,
+          any?.output,
+          any?.message,
+          any?.content,
+          any?.reply,
+        ) ??
+        firstString(
+          any?.choices?.[0]?.message?.content,
+          any?.choices?.[0]?.delta?.content,
+          any?.choices?.[0]?.text
+        );
+
+      if (!s && Array.isArray(any?.messages)) {
+        const lastAssist = [...any.messages].reverse().find(m => (m.role||"") === "assistant");
+        s = firstString(lastAssist?.content, lastAssist?.text);
+      }
+      if (!s && any?.data) {
+        if (typeof any.data === "string") s = any.data;
+        else if (Array.isArray(any.data)) {
+          s = firstString(any.data?.[0]?.message?.content, any.data?.[0]?.text, any.data?.[0]?.content);
+        } else if (typeof any.data === "object") {
+          s = firstString(any.data?.text, any.data?.message?.content, any.data?.content);
+        }
+      }
+      return sanitizeContent(s ?? tryExtractFromRaw(JSON.stringify(any)));
+    }
+    return sanitizeContent(tryExtractFromRaw(String(any)));
+  }
+
+  function tryExtractFromRaw(raw) {
+    let s = String(raw);
+
+    // Parse embedded JSON that contains "choices"
+    const choicesJson = s.match(/\{[\s\S]*?"choices"\s*:\s*\[[\s\S]*?\}([\s\S]*?)\}/);
+    if (choicesJson) {
+      try {
+        const obj = JSON.parse(choicesJson[0]);
+        const c = obj?.choices?.[0];
+        const msg = c?.message?.content ?? c?.text;
+        if (typeof msg === "string" && msg.trim()) return msg.trim();
+      } catch {}
+    }
+
+    // Pull the longest "content":"..." field
+    const contents = [...s.matchAll(/"content"\s*:\s*"([\s\S]*?)"/g)].map(m => {
+      try { return JSON.parse(`"${m[1].replace(/"/g, '\\"')}"`); } catch { return m[1]; }
+    });
+    if (contents.length) {
+      contents.sort((a,b)=> b.length - a.length);
+      return contents[0].trim();
+    }
+
+    // Strip noise and keep largest paragraph
+    s = stripLmStudioNoise(s);
+    const parts = s.split(/\n{2,}/).map(x=>x.trim()).filter(Boolean);
+    parts.sort((a,b)=> b.length - a.length);
+    return (parts[0] || s).trim();
+  }
+
+  function extractAddedLatency(j) {
+    const cand = j?.added_latency_ms ?? j?.metrics?.added_latency_ms ?? j?.telemetry?.added_latency_ms;
+    return Number.isFinite(cand) ? Math.round(Number(cand)) : null;
+  }
+
+  // ======== Backend selection ========
+  async function detectBackend() {
+  // Try /health with admin token
+  try {
+    const headers = {};
+    if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
+    const r = await fetch(`${GATEWAY_BASE}/health`, {
+      cache: "no-store",
+      headers,
+      mode: "cors",
+    });
+    if (r.ok) {
+      useGateway = true;
+      setBackendTag();
+      return;
+    }
+  } catch {}
+
+  // Fallback probe: see if /metrics is reachable
+  try {
+    const headers = {};
+    if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
+    const r = await fetch(`${GATEWAY_BASE}${GATEWAY_METRICS}?ping=${Date.now()}`, {
+      method: "GET",
+      cache: "no-store",
+      headers,
+      mode: "cors",
+    });
+    useGateway = r.ok;
+  } catch {
+    useGateway = false;
+  }
+  setBackendTag();
+}
+
+  // ======== Senders ========
+  // persist the firewall toggle across reloads
+(function initFirewallToggle(){
+  const saved = localStorage.getItem('asg.firewall.enabled');
+  if (saved !== null) {
+    fwToggle.checked = saved === '1';     // '1' means enabled
+  }
+  updateFirewallLabel();
+  fwToggle.addEventListener('change', () => {
+    localStorage.setItem('asg.firewall.enabled', fwToggle.checked ? '1' : '0');
+    updateFirewallLabel();
+  });
+})();
+
+function updateFirewallLabel() {
+  // Optional: color the pill/tag to make it obvious
+  const lbl = fwToggle.closest('label')?.querySelector('span');
+  if (!lbl) return;
+  if (fwToggle.checked) {
+    lbl.textContent = 'Firewall Enabled';
+  } else {
+    lbl.textContent = 'Firewall Bypassed';
+  }
+}
+
+  async function sendViaGateway(text) {
+  const firewallEnabled = !!fwToggle?.checked;
+
+  const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+  };
+  if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
+
+  // Send multiple encodings so the server can accept whichever it supports
+  headers["X-ASG-Bypass"] = firewallEnabled ? "0" : "1";         // numeric
+  headers["x-asg-bypass"] = firewallEnabled ? "0" : "1";         // lowercase (some proxies)
+  headers["X-ASG-Bypass-Bool"] = firewallEnabled ? "false" : "true"; // boolean string
+
+  // Query fallback: ?bypass=1 means "skip firewall"
+  const qs = firewallEnabled ? "" : (GATEWAY_CHAT.includes("?") ? "&bypass=1" : "?bypass=1");
+
+  const body = JSON.stringify({ prompt: text });
+
+  const res = await fetch(GATEWAY_BASE + GATEWAY_CHAT + qs, {
+    method: "POST",
+    headers,
+    body,
+    mode: "cors",
+    cache: "no-store",
+  });
+
+  if (!res.ok) throw new Error("Gateway error " + res.status);
+
+  // Force Gateway chip (you already do this)
+  useGateway = true;
+  setBackendTag();
+
+  const j = await fetchJSON(res);
+  const answer = extractText(j);
+  const added  = extractAddedLatency(j);
+  if (Number.isFinite(added)) {
+    lastAddedLatency = Math.round(added);
+    statLatency.textContent = `${lastAddedLatency} ms`;
+  }
+  return answer;
+}
+
+
+  async function sendViaLMStudio(text) {
+  const res = await fetch(`${LMSTUDIO_BASE}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({
+      model: LMSTUDIO_MODEL,
+      messages: [{ role: "user", content: text }],
+      temperature: 0.5,
+      top_p: 1,
+      // key bits to prevent mid-sentence cutoffs:
+      max_tokens: 2048,       // increase as needed
+      stream: false,          // keep it simple for now
+      stop: [],               // no stop sequences
+      response_format: { type: "text" } // avoid JSON mode
+    }),
+  });
+  if (!res.ok) throw new Error("LM Studio error " + res.status);
+  const j = await fetchJSON(res);
+  return extractText(j);
+}
+
+
+  // ======== Composer submit ========
+  document.getElementById("composer").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const baseText = (promptEl.value || "").trim();
+    if (!baseText) return;
+
+    promptEl.value = ""; // snappy UX
+
+    const attach = await inlineAttachments();
+    const text = baseText + attach;
+
+    addMsg("user", baseText)// + (attach ? "\n\n(attachments inlined)" : ""));
+    addMsg("assistant", "…thinking…");
+
+    try {
+      await detectBackend();
+      const answer = useGateway ? await sendViaGateway(text) : await sendViaLMStudio(text);
+      updateLastAssistant(answer);
+    } catch (err) {
+      console.error(err);
+      updateLastAssistant(String(err));
+    } finally {
+      clearAttachmentsUI();
+      updateMetrics().catch(()=>{});
+    }
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", () => {
+    chatEl.innerHTML = "";
+    lastAddedLatency = null;
+    statLatency.textContent = "—";
+  });
+
+  const DEBUG_METRICS = false; // set true to log raw scrape to console
+
+function parseProm(text) {
+  const lines = text.split(/\r?\n/).filter(l => l && !l.startsWith('#'));
+  const reqs = { allow: 0, block: 0, other: 0, totalOnly: 0 };
+  const reasons = {};
+  const num = (s) => (Number.isFinite(Number(s)) ? Number(s) : 0);
+
+  for (const ln of lines) {
+    let m = ln.match(/^asg_requests(?:_total)?\{[^}]*decision="([^"]+)"[^}]*\}\s+([0-9.eE+-]+)/);
+    if (m) { const d = m[1].toLowerCase(), v = num(m[2]);
+      if (d === 'allow') reqs.allow += v;
+      else if (d === 'block') reqs.block += v;
+      else reqs.other += v;
+      continue;
+    }
+    m = ln.match(/^asg_requests_(allow|block|other)(?:_total)?\s+([0-9.eE+-]+)/);
+    if (m) { const d = m[1].toLowerCase(), v = num(m[2]);
+      if (d === 'allow') reqs.allow += v;
+      else if (d === 'block') reqs.block += v;
+      else reqs.other += v;
+      continue;
+    }
+    m = ln.match(/^asg_requests(?:_total)?\s+([0-9.eE+-]+)/);
+    if (m) { reqs.totalOnly += num(m[1]); continue; }
+
+    m = ln.match(/^(?:asg_policy_hits|asg_rule_hits)(?:_total)?\{[^}]*reason_code="([^"]+)"[^}]*\}\s+([0-9.eE+-]+)/);
+    if (m) { const rc = m[1]; const v = num(m[2]); reasons[rc] = (reasons[rc] || 0) + v; continue; }
+  }
+  const total = (reqs.allow + reqs.block + reqs.other) || reqs.totalOnly;
+  return { reqs, reasons, total, latencyP50: null };
+}
+
+// NEW: Auto-detect JSON metrics (your gateway) or fall back to Prometheus
+function parseAsgMetrics(raw) {
+  const txt = String(raw || '').trim();
+  if (txt.startsWith('{')) {
+    try {
+      const j = JSON.parse(txt);
+      const reqs = {
+        allow: Number(j.allow)  || 0,
+        block: Number(j.block)  || 0,
+        other: Number(j.monitor)|| 0, // map "monitor" to "other"
+      };
+      const reasons = j.rule_hits || {};
+      const latencyP50 =
+        (j.latency_ms_histogram && Number(j.latency_ms_histogram.p50_ms)) || null;
+      const total = reqs.allow + reqs.block + reqs.other;
+      return { reqs, reasons, total, latencyP50 };
+    } catch {
+      // fall through to Prom parser
+    }
+  }
+  return parseProm(txt);
+}
+
+async function updateMetrics() {
+  // If we’re not using the gateway, stats won’t move (LM Studio fallback).
+  if (!useGateway) {
+    statTotal.textContent = '—';
+    statAllowRate.textContent = '—';
+    statBlockRate.textContent = '—';
+    reasonsEl.innerHTML = '<div class="text-xs text-zinc-400">Gateway offline (LM Studio fallback). No metrics.</div>';
+    return;
+  }
+
+  try {
+    const headers = {
+      'Accept': 'application/json, text/plain; q=0.9',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    };
+    if (ADMIN_TOKEN) headers['X-Admin-Token'] = ADMIN_TOKEN;
+
+    const res = await fetch(`${GATEWAY_BASE + GATEWAY_METRICS}?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers,
+      mode: 'cors',
+    });
+    if (!res.ok) throw new Error(`metrics HTTP ${res.status}`);
+
+    // Try JSON first; fall back to text
+    let bodyText;
+    let parsed;
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      const json = await res.json();
+      parsed = parseAsgMetrics(JSON.stringify(json));
+    } else {
+      bodyText = await res.text();
+      if (DEBUG_METRICS) console.debug('ASG /metrics sample:\n', bodyText.slice(0, 2000));
+      parsed = parseAsgMetrics(bodyText);
+    }
+
+    const { reqs, reasons, total, latencyP50 } = parsed;
+    const denom = total || (reqs.allow + reqs.block + reqs.other);
+    const allowRate = denom ? Math.round((reqs.allow / denom) * 100) : 0;
+    const blockRate = denom ? Math.round((reqs.block / denom) * 100) : 0;
+
+    statTotal.textContent = String(denom || 0);
+    statAllowRate.textContent = `${allowRate}%`;
+    statBlockRate.textContent = `${blockRate}%`;
+    if (Number.isFinite(latencyP50)) statLatency.textContent = `${Math.round(latencyP50)} ms`;
+
+    // Reasons
+    reasonsEl.innerHTML = '';
+    const entries = Object.entries(reasons).sort((a,b)=> b[1]-a[1]).slice(0,5);
+    if (!entries.length) {
+      reasonsEl.innerHTML = '<div class="text-xs text-zinc-400">No block reasons yet.</div>';
+    } else {
+      for (const [rc, count] of entries) {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between rounded-lg border border-white/10 px-3 py-2 bg-white/5';
+        row.innerHTML = `<span class="text-sm">${rc}</span><span class="text-sm text-zinc-300">${count}</span>`;
+        reasonsEl.appendChild(row);
+      }
+    }
+  } catch (err) {
+    if (DEBUG_METRICS) console.warn('Metrics scrape failed:', err);
+    // keep previous values
+  }
+}
+
+window.__updateBars = function() {
+      const a = document.getElementById('statAllowRate')?.textContent?.replace('%','') || '0';
+      const b = document.getElementById('statBlockRate')?.textContent?.replace('%','') || '0';
+      const allow = Math.max(0, Math.min(100, parseInt(a,10) || 0));
+      const block = Math.max(0, Math.min(100, parseInt(b,10) || 0));
+      const elA = document.getElementById('barAllow');
+      const elB = document.getElementById('barBlock');
+      if (elA) elA.style.width = allow + '%';
+      if (elB) elB.style.width = block + '%';
+    };
+
+window.__updateBars?.();
+
+
+  document.getElementById("refreshBtn").addEventListener("click", () => updateMetrics());
+  setInterval(updateMetrics, 5000);
+
+  // initial
+  detectBackend().then(updateMetrics).catch(()=>{});
+</script>
+
+</body>
+</html>

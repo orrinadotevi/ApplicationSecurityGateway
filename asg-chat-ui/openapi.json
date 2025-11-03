@@ -1,0 +1,25 @@
+
+
+StatusCode        : 200
+StatusDescription : OK
+Content           : {"openapi":"3.1.0","info":{"title":"LLM-ASG Gateway (Step 5)","version":"0.1.0"},"paths":{"/dashboard":{"get":{"summary":"Dashboard
+                    ","operationId":"dashboard_dashboard_get","responses":{"200":{"descri...
+RawContent        : HTTP/1.1 200 OK
+                    x-content-type-options: nosniff
+                    x-frame-options: DENY
+                    referrer-policy: no-referrer
+                    Content-Length: 4373
+                    Content-Type: application/json
+                    Date: Tue, 14 Oct 2025 01:15:46 GMT
+                    Server...
+Forms             : {}
+Headers           : {[x-content-type-options, nosniff], [x-frame-options, DENY], [referrer-policy, no-referrer], [Content-Length, 4373]...}
+Images            : {}
+InputFields       : {}
+Links             : {}
+ParsedHtml        : mshtml.HTMLDocumentClass
+RawContentLength  : 4373
+
+
+
+
