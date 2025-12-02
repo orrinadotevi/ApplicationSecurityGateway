@@ -172,7 +172,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "MOCK").upper()  # MOCK | OPENAI | OPEN
 # OpenAI-compatible / LM Studio
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:1234")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "openai/gpt-oss-20b")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
 
 # Build headers per request so we don't send an empty Authorization header
