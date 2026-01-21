@@ -15,7 +15,17 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-import httpx, os, uuid, yaml, re, time, threading, hashlib, logging, json, ipaddress
+import httpx
+import os
+import uuid
+import yaml
+import re
+import time
+import threading
+import hashlib
+import logging
+import json
+import ipaddress
 from logging.handlers import RotatingFileHandler
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Tuple
@@ -38,22 +48,24 @@ app.add_middleware(
 )
 
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins="http://localhost:5173",       # or ["*"] for local dev only
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["Retry-After","X-Policy-Version"],
+    expose_headers=["Retry-After", "X-Policy-Version"],
     max_age=600,
 )
+
 
 @app.get("/health")
 def health():
     return {"ok": True}
 
 # --- Basic security headers ---
+
+
 @app.middleware("http")
 async def security_headers_mw(request: Request, call_next):
     resp = await call_next(request)
@@ -66,8 +78,10 @@ async def security_headers_mw(request: Request, call_next):
 # Paths & limits
 # -----------------------------------------------------------------------------
 ROOT_DIR = Path(__file__).resolve().parent.parent
-POLICY_PATH = os.getenv("POLICY_PATH", str(ROOT_DIR / "configs" / "policy.yaml"))
-LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "http://mock-llm:8001/echo")  # for MOCK
+POLICY_PATH = os.getenv("POLICY_PATH", str(
+    ROOT_DIR / "configs" / "policy.yaml"))
+LLM_ENDPOINT = os.getenv(
+    "LLM_ENDPOINT", "http://mock-llm:8001/echo")  # for MOCK
 LOG_DIR = os.getenv("LOG_DIR", str(ROOT_DIR / "logs"))
 STATIC_DIR = Path(os.getenv("STATIC_DIR", str(ROOT_DIR / "static")))
 Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
@@ -79,12 +93,15 @@ MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", "32768"))  # 32 KB
 # Logging (with optional JSON logs)
 # -----------------------------------------------------------------------------
 LOG_FILE = str(Path(LOG_DIR) / "asg.log")
-JSON_LOGS = os.getenv("JSON_LOGS", "true").lower() in ("1", "true", "yes", "on")
+JSON_LOGS = os.getenv("JSON_LOGS", "true").lower() in (
+    "1", "true", "yes", "on")
 
 # --- Test / CI helpers (PATCH) ---
 IS_PYTEST = bool(os.environ.get("PYTEST_CURRENT_TEST"))
 # If you want MOCK to hit the mock-llm container (E2E), set MOCK_HTTP=1
-MOCK_HTTP = os.getenv("MOCK_HTTP", "false").lower() in ("1", "true", "yes", "on")
+MOCK_HTTP = os.getenv("MOCK_HTTP", "false").lower() in (
+    "1", "true", "yes", "on")
+
 
 class _JsonOrStrFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -102,6 +119,7 @@ class _JsonOrStrFormatter(logging.Formatter):
             return f"{record.levelname} {msg}"
         return super().format(record)
 
+
 logger = logging.getLogger("asg")
 logger.setLevel(logging.INFO)
 _handler = RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3)
@@ -109,9 +127,11 @@ _handler.setFormatter(_JsonOrStrFormatter("%(message)s"))
 if not logger.handlers:
     logger.addHandler(_handler)
 
+
 def log_event(event: dict):
     event.setdefault("component", "gateway")
     logger.info(event)
+
 
 # -----------------------------------------------------------------------------
 # Security: Admin bearer + IP allow-list
@@ -119,7 +139,8 @@ def log_event(event: dict):
 security = HTTPBearer(auto_error=False)
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "Africangoku23!")
 ALLOW_INSECURE_ADMIN = (
-    os.getenv("ALLOW_INSECURE_ADMIN", "false").lower() in ("1","true","yes","on")
+    os.getenv("ALLOW_INSECURE_ADMIN", "false").lower() in (
+        "1", "true", "yes", "on")
     or bool(os.environ.get("PYTEST_CURRENT_TEST"))
 )
 # Comma-separated IPv4/IPv6 or CIDR ranges
@@ -132,12 +153,14 @@ if _ADMIN_IP_ALLOWLIST_RAW:
             # If single IP, make it /32 (v4) or /128 (v6)
             if "/" not in part:
                 ip_obj = ipaddress.ip_address(part)
-                net = ipaddress.ip_network(part + ("/32" if ip_obj.version == 4 else "/128"), strict=False)
+                net = ipaddress.ip_network(
+                    part + ("/32" if ip_obj.version == 4 else "/128"), strict=False)
             else:
                 net = ipaddress.ip_network(part, strict=False)
             _ADMIN_IP_NETS.append(net)
         except Exception:
-            log_event({"event":"admin_ip_allowlist_parse_error","value":part})
+            log_event({"event": "admin_ip_allowlist_parse_error", "value": part})
+
 
 def _ip_allowed(ip: str) -> bool:
     if not _ADMIN_IP_NETS:
@@ -148,6 +171,7 @@ def _ip_allowed(ip: str) -> bool:
     except Exception:
         return False
 
+
 def _admin_bypass_active() -> bool:
     return (
         ALLOW_INSECURE_ADMIN
@@ -155,19 +179,24 @@ def _admin_bypass_active() -> bool:
         or os.getenv("TEST_MODE", "0") == "1"
     )
 
+
 def require_admin(creds: Optional[HTTPAuthorizationCredentials] = Depends(security), request: Request = None):
     if _admin_bypass_active():
         return
     ip = request.client.host if request and request.client else "unknown"
     if not _ip_allowed(ip):
-        raise HTTPException(status_code=403, detail="Admin access not allowed from this IP")
+        raise HTTPException(
+            status_code=403, detail="Admin access not allowed from this IP")
     if creds is None or creds.credentials != ADMIN_TOKEN:
-        raise HTTPException(status_code=403, detail="Invalid or missing admin token.")
+        raise HTTPException(
+            status_code=403, detail="Invalid or missing admin token.")
+
 
 # -----------------------------------------------------------------------------
 # LLM Provider config
 # -----------------------------------------------------------------------------
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "MOCK").upper()  # MOCK | OPENAI | OPENAI_COMPAT | OLLAMA
+# MOCK | OPENAI | OPENAI_COMPAT | OLLAMA
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "MOCK").upper()
 
 # OpenAI-compatible / LM Studio
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:1234")
@@ -176,18 +205,23 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
 
 # Build headers per request so we don't send an empty Authorization header
+
+
 def _openai_headers():
     h = {"Content-Type": "application/json"}
     if OPENAI_API_KEY:
         h["Authorization"] = f"Bearer {OPENAI_API_KEY}"
     return h
 
+
 # Ollama (local)
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 
 # Fail-open (availability over strictness)
-FAIL_OPEN = os.getenv("FAIL_OPEN", "false").lower() in ("1","true","yes","on")
+FAIL_OPEN = os.getenv("FAIL_OPEN", "false").lower() in (
+    "1", "true", "yes", "on")
+
 
 async def _call_llm(text: str, request_id: str):
     if LLM_PROVIDER == "MOCK":
@@ -202,7 +236,8 @@ async def _call_llm(text: str, request_id: str):
     elif LLM_PROVIDER in ("OPENAI", "OPENAI_COMPAT"):
         # For OPENAI (cloud), require API key. For OPENAI_COMPAT (e.g., LM Studio), key is optional.
         if LLM_PROVIDER == "OPENAI" and not OPENAI_API_KEY:
-            raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
+            raise HTTPException(
+                status_code=500, detail="OPENAI_API_KEY not set")
         payload = {
             "model": OPENAI_MODEL,
             "messages": [{"role": "user", "content": text}],
@@ -228,16 +263,21 @@ async def _call_llm(text: str, request_id: str):
         except httpx.HTTPStatusError as e:
             status = e.response.status_code if e.response is not None else "n/a"
             body = (e.response.text[:300] if e.response is not None else "")
-            raise HTTPException(status_code=502, detail=f"Ollama HTTP {status} at {url}: {body}")
+            raise HTTPException(
+                status_code=502, detail=f"Ollama HTTP {status} at {url}: {body}")
         except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Ollama connect error to {url}: {str(e)}")
+            raise HTTPException(
+                status_code=502, detail=f"Ollama connect error to {url}: {str(e)}")
 
     else:
-        raise HTTPException(status_code=500, detail=f"Unsupported LLM_PROVIDER={LLM_PROVIDER}")
+        raise HTTPException(
+            status_code=500, detail=f"Unsupported LLM_PROVIDER={LLM_PROVIDER}")
 
 # -----------------------------------------------------------------------------
 # Policy structures (severity)
 # -----------------------------------------------------------------------------
+
+
 class DenyPattern(BaseModel):
     id: str
     pattern: str
@@ -245,12 +285,15 @@ class DenyPattern(BaseModel):
     category: Optional[str] = None
     severity: Optional[int] = 1
 
+
 class Policy(BaseModel):
     deny_patterns: List[DenyPattern] = []
     max_tokens: int = 800
     version: Optional[str] = None
 
-COUNT_ALL_MATCHES = os.getenv("COUNT_ALL_MATCHES", "false").lower() in ("1","true","yes","on")
+
+COUNT_ALL_MATCHES = os.getenv(
+    "COUNT_ALL_MATCHES", "false").lower() in ("1", "true", "yes", "on")
 
 # -----------------------------------------------------------------------------
 # State: policy, metrics, mode
@@ -269,9 +312,9 @@ _metrics: Dict[str, any] = {
     "allow": 0, "block": 0, "monitor": 0,
     "rule_hits": {}, "last_reload_epoch": None, "policy_version": None,
     "uptime_epoch": time.time(),
-    "monitor_only": os.getenv("MONITOR_ONLY", "false").lower() in ("1","true","yes","on"),
-    "redactions": {"ssn":0,"email":0,"phone":0,"card":0},
-    "latency_ms_histogram": {"le_50":0,"le_100":0,"le_200":0,"le_500":0,"gt_500":0},
+    "monitor_only": os.getenv("MONITOR_ONLY", "false").lower() in ("1", "true", "yes", "on"),
+    "redactions": {"ssn": 0, "email": 0, "phone": 0, "card": 0},
+    "latency_ms_histogram": {"le_50": 0, "le_100": 0, "le_200": 0, "le_500": 0, "gt_500": 0},
     "latency_count": 0,
     "latency_sum_ms": 0.0,
     "p50_ms": 0.0, "p90_ms": 0.0, "p99_ms": 0.0,
@@ -287,10 +330,11 @@ _lat_samples = deque(maxlen=LAT_BUFFER)
 # rate-limit metrics (initialise; will be synced with active settings below)
 _metrics.setdefault("rate_limit_dropped", 0)
 _metrics.setdefault("rate_limit", {
-    "enabled": os.getenv("RATE_LIMIT_ENABLED", "false").lower() in ("1","true","yes","on"),
+    "enabled": os.getenv("RATE_LIMIT_ENABLED", "false").lower() in ("1", "true", "yes", "on"),
     "per_min": int(os.getenv("RATE_LIMIT_PER_MIN", "60")),
     "burst": int(os.getenv("RATE_LIMIT_BURST", "20")),
 })
+
 
 def _file_hash(path: str) -> str:
     h = hashlib.sha256()
@@ -302,14 +346,16 @@ def _file_hash(path: str) -> str:
     except FileNotFoundError:
         return "no-policy"
 
+
 def _load_policy_locked() -> Policy:
     try:
-        with open(POLICY_PATH,"r",encoding="utf-8") as f:
+        with open(POLICY_PATH, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
     except FileNotFoundError:
         raw = {}
     dps = [DenyPattern(**item) for item in (raw.get("deny_patterns") or [])]
-    return Policy(deny_patterns=dps, max_tokens=raw.get("max_tokens",800), version=_file_hash(POLICY_PATH))
+    return Policy(deny_patterns=dps, max_tokens=raw.get("max_tokens", 800), version=_file_hash(POLICY_PATH))
+
 
 def _maybe_reload_policy():
     global _policy, _policy_mtime
@@ -324,16 +370,20 @@ def _maybe_reload_policy():
             _metrics["last_reload_epoch"] = time.time()
             _metrics["policy_version"] = _policy.version
             for dp in _policy.deny_patterns:
-                _metrics["rule_hits"].setdefault(dp.id,0)
-            log_event({"event":"policy_reload","policy_version":_policy.version})
+                _metrics["rule_hits"].setdefault(dp.id, 0)
+            log_event({"event": "policy_reload",
+                      "policy_version": _policy.version})
+
 
 def _validate_policy_file(path: str) -> None:
-    with open(path,"r",encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
     _ = [DenyPattern(**item) for item in (raw.get("deny_patterns") or [])]
-    ids = [dp["id"] for dp in (raw.get("deny_patterns") or []) if isinstance(dp,dict) and "id" in dp]
+    ids = [dp["id"] for dp in (raw.get("deny_patterns") or []) if isinstance(
+        dp, dict) and "id" in dp]
     if len(ids) != len(set(ids)):
         raise ValueError("Duplicate rule IDs in deny_patterns")
+
 
 def _observe_latency_ms(ms: float):
     global _LAT_IDX, _LAT_FILLED
@@ -341,14 +391,20 @@ def _observe_latency_ms(ms: float):
         _lat_samples.append(float(ms))
         _metrics["latency_count"] += 1
         _metrics["latency_sum_ms"] += float(ms)
-        if ms <= 50: _metrics["latency_ms_histogram"]["le_50"] += 1
-        elif ms <= 100: _metrics["latency_ms_histogram"]["le_100"] += 1
-        elif ms <= 200: _metrics["latency_ms_histogram"]["le_200"] += 1
-        elif ms <= 500: _metrics["latency_ms_histogram"]["le_500"] += 1
-        else: _metrics["latency_ms_histogram"]["gt_500"] += 1
+        if ms <= 50:
+            _metrics["latency_ms_histogram"]["le_50"] += 1
+        elif ms <= 100:
+            _metrics["latency_ms_histogram"]["le_100"] += 1
+        elif ms <= 200:
+            _metrics["latency_ms_histogram"]["le_200"] += 1
+        elif ms <= 500:
+            _metrics["latency_ms_histogram"]["le_500"] += 1
+        else:
+            _metrics["latency_ms_histogram"]["gt_500"] += 1
         _LAT_RING[_LAT_IDX] = float(ms)
         _LAT_IDX = (_LAT_IDX + 1) % LAT_BUFFER
         _LAT_FILLED = min(LAT_BUFFER, _LAT_FILLED + 1)
+
 
 def _compute_percentiles_locked():
     if _LAT_FILLED == 0:
@@ -356,26 +412,33 @@ def _compute_percentiles_locked():
         return
     arr = _LAT_RING[:_LAT_FILLED]
     arr.sort()
+
     def perc(p):
-        if not arr: return 0.0
+        if not arr:
+            return 0.0
         idx = int(round((p/100.0) * (len(arr)-1)))
         return arr[idx]
     _metrics["p50_ms"] = round(perc(50), 2)
     _metrics["p90_ms"] = round(perc(90), 2)
     _metrics["p99_ms"] = round(perc(99), 2)
 
+
 # Initialize policy
 _policy = _load_policy_locked()
-try: _policy_mtime = os.path.getmtime(POLICY_PATH)
-except FileNotFoundError: _policy_mtime = 0.0
+try:
+    _policy_mtime = os.path.getmtime(POLICY_PATH)
+except FileNotFoundError:
+    _policy_mtime = 0.0
 _metrics["policy_version"] = _policy.version
 _metrics["last_reload_epoch"] = time.time()
 for dp in _policy.deny_patterns:
-    _metrics["rule_hits"].setdefault(dp.id,0)
+    _metrics["rule_hits"].setdefault(dp.id, 0)
 
 # -----------------------------------------------------------------------------
 # Access log middleware (cheap request trace)
 # -----------------------------------------------------------------------------
+
+
 @app.middleware("http")
 async def access_log_mw(request: Request, call_next):
     start = time.time()
@@ -405,10 +468,13 @@ async def access_log_mw(request: Request, call_next):
 # -----------------------------------------------------------------------------
 # Rate limit middleware (token bucket) for POST /chat
 # -----------------------------------------------------------------------------
-RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() in ("1","true","yes","on")
+RATE_LIMIT_ENABLED = os.getenv(
+    "RATE_LIMIT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "60"))
 RATE_LIMIT_BURST = int(os.getenv("RATE_LIMIT_BURST", "20"))
-RATE_LIMIT_BYPASS = os.getenv("RATE_LIMIT_BYPASS", "false").lower() in ("1","true","yes","on")
+RATE_LIMIT_BYPASS = os.getenv(
+    "RATE_LIMIT_BYPASS", "false").lower() in ("1", "true", "yes", "on")
+
 
 class TokenBucket:
     def __init__(self, rate_per_min: int, burst: int):
@@ -429,6 +495,7 @@ class TokenBucket:
         wait = needed / self.rate if self.rate > 0 else 9999
         return False, wait
 
+
 _RATE_LOCK = threading.Lock()
 _BUCKETS: Dict[str, TokenBucket] = {}
 
@@ -439,6 +506,7 @@ with _state_lock:
         "per_min": RATE_LIMIT_PER_MIN,
         "burst": RATE_LIMIT_BURST,
     }
+
 
 @app.middleware("http")
 async def rate_limit_mw(request: Request, call_next):
@@ -460,7 +528,8 @@ async def rate_limit_mw(request: Request, call_next):
                 "X-RateLimit-Limit": str(RATE_LIMIT_PER_MIN),
                 "X-RateLimit-Remaining": "0",
             }
-            log_event({"event":"rate_limit_drop","client_ip":ip,"retry_after_s":round(retry_after,2)})
+            log_event({"event": "rate_limit_drop", "client_ip": ip,
+                      "retry_after_s": round(retry_after, 2)})
             return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429, headers=headers)
         else:
             with _RATE_LOCK:
@@ -471,7 +540,7 @@ async def rate_limit_mw(request: Request, call_next):
             }
             resp = await call_next(request)
             try:
-                for k,v in extra.items():
+                for k, v in extra.items():
                     resp.headers[k] = v
             except Exception:
                 pass
@@ -481,17 +550,20 @@ async def rate_limit_mw(request: Request, call_next):
 # -----------------------------------------------------------------------------
 # Global size guard (pre-routing)
 # -----------------------------------------------------------------------------
+
+
 @app.middleware("http")
 async def size_guard_mw(request: Request, call_next):
     path = request.url.path.rstrip("/")
-    if request.method in ("POST","PUT","PATCH") and path == "/chat":
+    if request.method in ("POST", "PUT", "PATCH") and path == "/chat":
         try:
             raw = await request.body()
         except Exception:
             raw = b""
         raw_len = len(raw)
         try:
-            logger.info({"event":"body_len","path":request.url.path,"bytes":raw_len})
+            logger.info(
+                {"event": "body_len", "path": request.url.path, "bytes": raw_len})
         except Exception:
             pass
         if raw_len > MAX_REQUEST_BYTES:
@@ -506,6 +578,7 @@ async def size_guard_mw(request: Request, call_next):
 # -----------------------------------------------------------------------------
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+
 @app.get("/dashboard")
 async def dashboard():
     dash = STATIC_DIR / "dashboard.html"
@@ -516,10 +589,12 @@ async def dashboard():
 # -----------------------------------------------------------------------------
 # Core endpoints
 # -----------------------------------------------------------------------------
+
+
 @app.get("/health")
-async def health():
-    _maybe_reload_policy()
-    return {"status":"ok","policy_version":_policy.version,"monitor_only":_metrics["monitor_only"]}
+def health():
+    return {"status": "ok"}
+
 
 @app.get("/policy")
 async def get_policy():
@@ -530,8 +605,9 @@ async def get_policy():
             "deny_patterns": [p.model_dump() for p in _policy.deny_patterns],
             "version": _policy.version,
         },
-        headers={"Cache-Control":"no-store"}
+        headers={"Cache-Control": "no-store"}
     )
+
 
 @app.post("/chat")
 async def chat(payload: dict, request: Request):
@@ -556,7 +632,8 @@ async def chat(payload: dict, request: Request):
         raw = b""
     raw_len = len(raw)
     if raw_len > MAX_REQUEST_BYTES:
-        raise HTTPException(status_code=413, detail=f"Request too large ({raw_len} bytes > {MAX_REQUEST_BYTES})")
+        raise HTTPException(
+            status_code=413, detail=f"Request too large ({raw_len} bytes > {MAX_REQUEST_BYTES})")
     if raw:
         try:
             payload = json.loads(raw.decode("utf-8"))
@@ -565,7 +642,8 @@ async def chat(payload: dict, request: Request):
 
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
-        raise HTTPException(status_code=400, detail="Missing 'prompt' (string).")
+        raise HTTPException(
+            status_code=400, detail="Missing 'prompt' (string).")
 
     # Redact incoming prompt (for logs and optional upstream)
     original_prompt = prompt
@@ -574,7 +652,8 @@ async def chat(payload: dict, request: Request):
     if red.hits:
         with _state_lock:
             for k, v in red.hits.items():
-                _metrics["redactions"][k] = _metrics["redactions"].get(k, 0) + v
+                _metrics["redactions"][k] = _metrics["redactions"].get(
+                    k, 0) + v
 
     # Evaluate policy: gather ALL matches, then pick primary by highest severity
     matches: List[DenyPattern] = []
@@ -583,7 +662,7 @@ async def chat(payload: dict, request: Request):
             if re.search(dp.pattern, original_prompt):
                 matches.append(dp)
         except re.error:
-            log_event({"event":"bad_regex","rule_id":dp.id})
+            log_event({"event": "bad_regex", "rule_id": dp.id})
             continue
 
     allow = len(matches) == 0
@@ -595,9 +674,11 @@ async def chat(payload: dict, request: Request):
         with _state_lock:
             if COUNT_ALL_MATCHES:
                 for m in matches:
-                    _metrics["rule_hits"][m.id] = _metrics["rule_hits"].get(m.id, 0) + 1
+                    _metrics["rule_hits"][m.id] = _metrics["rule_hits"].get(
+                        m.id, 0) + 1
             else:
-                _metrics["rule_hits"][primary.id] = _metrics["rule_hits"].get(primary.id, 0) + 1
+                _metrics["rule_hits"][primary.id] = _metrics["rule_hits"].get(
+                    primary.id, 0) + 1
 
     upstream_payload = {
         "prompt": (redacted_prompt if REDACT_UPSTREAM else original_prompt),
@@ -616,22 +697,23 @@ async def chat(payload: dict, request: Request):
                 if FAIL_OPEN:
                     with _state_lock:
                         _metrics["fail_open_total"] += 1
-                    upstream = {"fallback": True, "reason": "upstream_unavailable"}
+                    upstream = {"fallback": True,
+                                "reason": "upstream_unavailable"}
                 else:
                     raise
             lat_ms = (time.time() - t0) * 1000.0
             _observe_latency_ms(lat_ms)
             log_event({
-                "event":"decision","request_id":request_id,"action":"MONITOR",
-                "rule_id":rid,"category":primary.category,"severity":primary.severity,
-                "all_matches":[m.id for m in matches],
-                "latency_ms":int(lat_ms),"policy_version":_policy.version,
+                "event": "decision", "request_id": request_id, "action": "MONITOR",
+                "rule_id": rid, "category": primary.category, "severity": primary.severity,
+                "all_matches": [m.id for m in matches],
+                "latency_ms": int(lat_ms), "policy_version": _policy.version,
                 "client_ip": ip, "path": path
             })
             return JSONResponse({
-                "request_id":request_id,"policy_version":_policy.version,
-                "decision":{"action":"MONITOR","rule_id":rid,"reason":primary.description,"severity":primary.severity},
-                "upstream":upstream
+                "request_id": request_id, "policy_version": _policy.version,
+                "decision": {"action": "MONITOR", "rule_id": rid, "reason": primary.description, "severity": primary.severity},
+                "upstream": upstream
             })
         else:
             with _state_lock:
@@ -639,13 +721,13 @@ async def chat(payload: dict, request: Request):
             lat_ms = (time.time() - t0) * 1000.0
             _observe_latency_ms(lat_ms)
             decision = {
-                "request_id":request_id,"action":"BLOCK","rule_id":rid,
-                "category":primary.category,"severity":primary.severity,
-                "reason":primary.description or "Policy violation",
-                "policy_version":_policy.version,
+                "request_id": request_id, "action": "BLOCK", "rule_id": rid,
+                "category": primary.category, "severity": primary.severity,
+                "reason": primary.description or "Policy violation",
+                "policy_version": _policy.version,
             }
-            log_event({**decision,"event":"decision","all_matches":[m.id for m in matches],
-                       "latency_ms":int(lat_ms), "client_ip": ip, "path": path})
+            log_event({**decision, "event": "decision", "all_matches": [m.id for m in matches],
+                       "latency_ms": int(lat_ms), "client_ip": ip, "path": path})
             return JSONResponse(status_code=403, content=decision)
 
     # Allowed
@@ -663,18 +745,21 @@ async def chat(payload: dict, request: Request):
     lat_ms = (time.time() - t0) * 1000.0
     _observe_latency_ms(lat_ms)
     log_event({
-        "event":"decision","request_id":request_id,"action":"ALLOW",
-        "latency_ms":int(lat_ms),"policy_version":_policy.version,
+        "event": "decision", "request_id": request_id, "action": "ALLOW",
+        "latency_ms": int(lat_ms), "policy_version": _policy.version,
         "client_ip": ip, "path": path
     })
-    return JSONResponse({"request_id":request_id,"policy_version":_policy.version,"upstream":upstream})
+    return JSONResponse({"request_id": request_id, "policy_version": _policy.version, "upstream": upstream})
 
 # -----------------------------------------------------------------------------
 # Admin endpoints
 # -----------------------------------------------------------------------------
+
+
 def _validate_policy_or_raise():
     _validate_policy_file(POLICY_PATH)
     return {"valid": True, "policy_path": POLICY_PATH}
+
 
 @app.post("/admin/policy/validate")
 async def validate_policy_post(_: HTTPAuthorizationCredentials = Depends(require_admin), request: Request = None):
@@ -683,12 +768,14 @@ async def validate_policy_post(_: HTTPAuthorizationCredentials = Depends(require
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Policy invalid: {e}")
 
+
 @app.get("/admin/policy/validate")
 async def validate_policy_get(_: HTTPAuthorizationCredentials = Depends(require_admin), request: Request = None):
     try:
         return _validate_policy_or_raise()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Policy invalid: {e}")
+
 
 @app.post("/admin/reload")
 async def force_reload(request: Request, _: HTTPAuthorizationCredentials = Depends(require_admin)):
@@ -708,11 +795,14 @@ async def force_reload(request: Request, _: HTTPAuthorizationCredentials = Depen
         _metrics["policy_version"] = _policy.version
         for dp in _policy.deny_patterns:
             _metrics["rule_hits"].setdefault(dp.id, 0)
-    log_event({"event":"policy_reload_forced","actor":actor,"policy_version":_policy.version})
+    log_event({"event": "policy_reload_forced", "actor": actor,
+              "policy_version": _policy.version})
     return JSONResponse(
-        content={"reloaded": True, "policy_version": _metrics["policy_version"], "last_reload_epoch": _metrics["last_reload_epoch"]},
-        headers={"Cache-Control":"no-store"}
+        content={"reloaded": True,
+                 "policy_version": _metrics["policy_version"], "last_reload_epoch": _metrics["last_reload_epoch"]},
+        headers={"Cache-Control": "no-store"}
     )
+
 
 @app.post("/admin/mode")
 async def set_mode(payload: dict, request: Request, _: HTTPAuthorizationCredentials = Depends(require_admin)):
@@ -721,8 +811,9 @@ async def set_mode(payload: dict, request: Request, _: HTTPAuthorizationCredenti
     with _state_lock:
         old = _metrics["monitor_only"]
         _metrics["monitor_only"] = mo
-    log_event({"event":"mode_change","actor":actor,"from":old,"to":mo})
+    log_event({"event": "mode_change", "actor": actor, "from": old, "to": mo})
     return {"monitor_only": _metrics["monitor_only"]}
+
 
 @app.get("/admin/logs")
 async def download_logs(_: HTTPAuthorizationCredentials = Depends(require_admin)):
@@ -750,13 +841,15 @@ async def download_logs(_: HTTPAuthorizationCredentials = Depends(require_admin)
     # Return a fixed-length body so Content-Length matches exactly
     return Response(content=data, media_type="text/plain; charset=utf-8", headers=headers)
 
+
 @app.post("/admin/metrics/reset")
 async def reset_metrics(_: HTTPAuthorizationCredentials = Depends(require_admin)):
     with _state_lock:
         _metrics["allow"] = _metrics["block"] = _metrics["monitor"] = 0
-        _metrics["rule_hits"] = {k:0 for k in _metrics["rule_hits"].keys()}
-        _metrics["redactions"] = {"ssn":0,"email":0,"phone":0,"card":0}
-        _metrics["latency_ms_histogram"] = {"le_50":0,"le_100":0,"le_200":0,"le_500":0,"gt_500":0}
+        _metrics["rule_hits"] = {k: 0 for k in _metrics["rule_hits"].keys()}
+        _metrics["redactions"] = {"ssn": 0, "email": 0, "phone": 0, "card": 0}
+        _metrics["latency_ms_histogram"] = {
+            "le_50": 0, "le_100": 0, "le_200": 0, "le_500": 0, "gt_500": 0}
         _metrics["latency_count"] = 0
         _metrics["latency_sum_ms"] = 0.0
         _metrics["p50_ms"] = _metrics["p90_ms"] = _metrics["p99_ms"] = 0.0
@@ -766,21 +859,26 @@ async def reset_metrics(_: HTTPAuthorizationCredentials = Depends(require_admin)
         _LAT_RING = [0.0] * LAT_BUFFER
         _LAT_IDX = 0
         _LAT_FILLED = 0
-    log_event({"event":"metrics_reset"})
+    log_event({"event": "metrics_reset"})
     return {"reset": True}
 
 # -----------------------------------------------------------------------------
 # Metrics endpoints
 # -----------------------------------------------------------------------------
+
+
 def _percentiles(samples):
     if not samples:
         return {"p50_ms": None, "p90_ms": None, "p99_ms": None}
     arr = sorted(samples)
+
     def q(pct):
-        if not arr: return None
+        if not arr:
+            return None
         idx = int(round((pct/100.0)*(len(arr)-1)))
         return round(arr[idx], 1)
     return {"p50_ms": q(50), "p90_ms": q(90), "p99_ms": q(99)}
+
 
 @app.get("/metrics")
 async def metrics():
@@ -807,7 +905,7 @@ async def metrics():
         # ---- Rate limit info (both nested and top-level aliases) ----
         rl_enabled = bool(RATE_LIMIT_ENABLED)
         rl_per_min = int(RATE_LIMIT_PER_MIN)
-        rl_burst   = int(RATE_LIMIT_BURST)
+        rl_burst = int(RATE_LIMIT_BURST)
         rl_dropped = int(_metrics.get("rate_limit_dropped", 0))
 
         content["rate_limit"] = {
@@ -818,7 +916,7 @@ async def metrics():
         }
         content["rate_limit_enabled"] = rl_enabled
         content["rate_limit_per_min"] = rl_per_min
-        content["rate_limit_burst"]   = rl_burst
+        content["rate_limit_burst"] = rl_burst
         content["rate_limit_dropped"] = rl_dropped
 
         # ---- Latency percentiles (both nested and top-level aliases) ----
@@ -858,13 +956,16 @@ async def metrics_prometheus():
         lines.append(f'llmasg_latency_ms_p50 {_metrics["p50_ms"]:.2f}')
         lines.append(f'llmasg_latency_ms_p90 {_metrics["p90_ms"]:.2f}')
         lines.append(f'llmasg_latency_ms_p99 {_metrics["p99_ms"]:.2f}')
-        lines.append(f'llmasg_rate_limit_dropped_total {_metrics["rate_limit_dropped"]}')
+        lines.append(
+            f'llmasg_rate_limit_dropped_total {_metrics["rate_limit_dropped"]}')
         lines.append(f'llmasg_fail_open_total {_metrics["fail_open_total"]}')
     return PlainTextResponse("\n".join(lines) + "\n")
 
 # -----------------------------------------------------------------------------
 # Diagnostics
 # -----------------------------------------------------------------------------
+
+
 @app.get("/debug/config")
 async def debug_config():
     data = {
@@ -887,6 +988,7 @@ async def debug_config():
         "MOCK_HTTP": MOCK_HTTP,
     }
     return JSONResponse(content=data, headers={"Cache-Control": "no-store"})
+
 
 @app.post("/debug/bodylen")
 async def debug_bodylen(request: Request):
