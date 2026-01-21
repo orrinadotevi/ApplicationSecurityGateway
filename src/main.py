@@ -58,11 +58,6 @@ app.add_middleware(
     max_age=600,
 )
 
-
-@app.get("/health")
-def health():
-    return {"ok": True}
-
 # --- Basic security headers ---
 
 
